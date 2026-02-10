@@ -1,10 +1,16 @@
 const mongoose = require("mongoose");
 
-const MONGO_URI =
-  "process.env.MONGO_URI"
-mongoose.connect(MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => console.error("❌ MongoDB error", err));
+/**
+ * 連線 MongoDB
+ * 只做一件事：用 process.env.MONGO_URI 連線
+ */
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log("MongoDB connected");
+  })
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
+  });
 
 module.exports = mongoose;
-  
