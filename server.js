@@ -18,9 +18,8 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 app.use(express.json());
-app.use("/api", verifyApiKey);
-app.use("/api", require("./routes/ingest"));
-app.use("/api", require("./routes/query"));
+app.use("/api", verifyApiKey, require("./routes/ingest"));
+app.use("/api", verifyApiKey, require("./routes/query"));
 
 app.listen(5000, () => {
   console.log("🚀 Server running on 5000");
