@@ -2,17 +2,30 @@ console.log("🔥 query router loaded");
 const express = require("express");
 const router = express.Router();
 const SensorData = require("../models/SensorData");
+const Settings = require("../models/Settings");
 const { evaluateSensor } = require("../utils/sensorGrading");
+
 
 // 最新一筆
 router.get("/sensor/latest", async (req, res) => {
-  const doc = await SensorData
-    .findOne()
-    .sort({ timestamp: -1 })
-    .lean();
+  try {
+    const doc = await SensorData
+      .findOne()
+      .sort({ timestamp: -1 })
+      .lean();
 
-    const evaluation = evaluateSensor(doc);
-  res.json({doc,evaluation});
+    const settings = await Settings
+      .findOne()
+      .sort({ time: -1 })
+      .lean();
+
+    const evaluation = evaluateSensor(doc, settings);
+
+    res.json({ doc, evaluation });
+  } catch (err) {
+    console.error("❌ sensor/latest error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // 最近 N 筆

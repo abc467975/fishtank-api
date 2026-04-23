@@ -14,7 +14,9 @@ const SensorDataSchema = new mongoose.Schema({
   WL3: Number,
 
   pH: Number,
+  pH_value: Number,
   DO: Number,
+  DO_value: Number,
   Turb: Number
 }, { versionKey: false });
 
