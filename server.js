@@ -1,5 +1,11 @@
 require("dotenv").config();
+
 const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
+
+const { addClient } = require("./utils/wsHub");
+
 const app = express();
 
 function verifyApiKey(req, res, next) {
@@ -13,20 +19,51 @@ function verifyApiKey(req, res, next) {
 }
 
 require("./db");
-//確任連線OK
+
+// 確認連線 OK
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
+
 app.use(express.json());
+
 app.use("/api", require("./routes/calibrationapi"));
 app.use("/api", require("./routes/query"));
+
 app.use("/api/sensor", verifyApiKey);
 app.use("/api", require("./routes/ingest"));
+
 app.use("/api/settings", verifyApiKey);
 app.use("/api", require("./routes/settings"));
-//app.use("/api/control", verifyApiKey);
+
+// 如果你之後要鎖 control，再打開這行
+// app.use("/api/control", verifyApiKey);
 app.use("/api", require("./routes/control"));
 
-app.listen(5000, () => {
+
+/* =========================
+   HTTP + WebSocket Server
+   ========================= */
+
+const server = http.createServer(app);
+
+const wss = new WebSocket.Server({
+  server,
+  path: "/ws"
+});
+
+wss.on("connection", (ws, req) => {
+  console.log("ESP32 WebSocket connected");
+
+  addClient(ws);
+
+  ws.send(JSON.stringify({
+    type: "connected",
+    message: "WebSocket connected to Node server"
+  }));
+});
+
+server.listen(5000, () => {
   console.log("🚀 Server running on 5000");
+  console.log("🔌 WebSocket path: /ws");
 });
