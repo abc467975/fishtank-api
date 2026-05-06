@@ -4,29 +4,25 @@ const router = express.Router();
 const ControlState = require("../models/controlstate");
 const ControlHistory = require("../models/controlhistory");
 
+const { broadcastControl, getClientCount } = require("../utils/wsHub");
+
 /* =========================
    Node 記憶體快取
-   ESP32 讀控制狀態時，優先從這裡拿
    ========================= */
 let latestControlCache = null;
 
 
 /* =========================
    GET 目前控制狀態
-   給 ESP32 / APP 讀取使用
    ========================= */
 router.get("/control", async (req, res) => {
 
   try {
 
-    // 1. 如果記憶體快取有資料，直接回傳
-    // 這裡不查 MongoDB，速度最快
     if (latestControlCache) {
       return res.json(latestControlCache);
     }
 
-    // 2. 如果 Node 剛重啟，記憶體是空的
-    // 才從 MongoDB 抓最後一筆目前狀態
     const state = await ControlState.findOne().sort({ updatedAt: -1 }).lean();
 
     if (state) {
@@ -34,7 +30,6 @@ router.get("/control", async (req, res) => {
       return res.json(state);
     }
 
-    // 3. 如果完全沒有資料
     return res.json({});
 
   } catch (err) {
@@ -48,7 +43,7 @@ router.get("/control", async (req, res) => {
 
 /* =========================
    POST 更新控制狀態
-   APP 更新控制資料時使用
+   APP 呼叫這支 API
    ========================= */
 router.post("/control", async (req, res) => {
 
@@ -61,12 +56,13 @@ router.post("/control", async (req, res) => {
       updatedAt: new Date()
     };
 
-    // 1. 先更新 Node 記憶體快取
-    // 這樣 ESP32 下一次 GET /control 時可以馬上拿到
+    // 1. 先更新 Node 記憶體
     latestControlCache = newState;
 
+    // 2. 立刻用 WebSocket 推送給 ESP32
+    broadcastControl(latestControlCache);
 
-    // 2. 再更新 MongoDB 目前狀態
+    // 3. 再更新 MongoDB 目前狀態
     const state = await ControlState.findOneAndUpdate(
       {},
       newState,
@@ -76,10 +72,7 @@ router.post("/control", async (req, res) => {
       }
     ).lean();
 
-
-    // 3. 用 MongoDB 回傳的完整資料同步快取
     latestControlCache = state;
-
 
     // 4. 寫入歷史紀錄
     await ControlHistory.create({
@@ -87,9 +80,9 @@ router.post("/control", async (req, res) => {
       timestamp: new Date()
     });
 
-
     res.json({
       message: "Control updated",
+      websocketClients: getClientCount(),
       state: latestControlCache
     });
 
