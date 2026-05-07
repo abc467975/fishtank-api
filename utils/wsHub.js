@@ -26,6 +26,19 @@ function broadcastControl(data) {
   });
 }
 
+function broadcastCalibration(data) {
+  const message = JSON.stringify({
+    type: "calibration",
+    data: data
+  });
+
+  esp32Clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(message);
+    }
+  });
+}
+
 function getClientCount() {
   return esp32Clients.size;
 }
@@ -33,5 +46,6 @@ function getClientCount() {
 module.exports = {
   addClient,
   broadcastControl,
+  broadcastCalibration,
   getClientCount
 };
