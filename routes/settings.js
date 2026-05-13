@@ -16,27 +16,26 @@ router.post("/settings", async (req, res) => {
     console.log("POST /settings received:", req.body);
 
     const data = new Settings(req.body);
-
-    // 1. 存進 MongoDB
     const savedData = await data.save();
 
-    // 2. 透過 WebSocket 即時推送給 ESP32
-    broadcastSettings(savedData);
-
-    // 3. 透過 MQTT 即時推送給 ESP32
-    // settings 屬於狀態資料，retain: true 是合理的
-    // ESP32 重連後可以拿到最後一次自動控制設定與餵食時間
-    publishJson(topicSettings(), savedData, {
+    // MQTT 優先
+    const mqttOk = await publishJson(topicSettings(), savedData, {
       qos: 1,
       retain: true
     });
 
-    console.log("Settings sent by WebSocket + MQTT");
-    console.log("MQTT topic:", topicSettings());
+    // MQTT 失敗才用 WebSocket 備援
+    if (!mqttOk) {
+      console.log("⚠️ MQTT settings failed，改用 WebSocket 備援");
+      broadcastSettings(savedData);
+    }
 
     res.json({
       status: "ok",
-      message: "Settings saved and sent by WebSocket + MQTT",
+      message: mqttOk
+        ? "Settings saved and sent by MQTT"
+        : "Settings saved and sent by WebSocket fallback",
+      mqttOk,
       data: savedData
     });
 
@@ -50,7 +49,6 @@ router.post("/settings", async (req, res) => {
     });
   }
 });
-
 
 // ===============================
 // GET /api/settings

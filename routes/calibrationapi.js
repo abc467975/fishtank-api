@@ -127,38 +127,35 @@ router.post("/calibration", async (req, res) => {
     };
 
     const doc = await Calibration.findOneAndUpdate(
-      { device_id },
-      { $set: updateData },
-      {
-        new: true,
-        upsert: true
-      }
-    ).lean();
+  { device_id },
+  { $set: updateData },
+  {
+    new: true,
+    upsert: true
+  }
+).lean();
 
-    // ===============================
-    // WebSocket 推送給 ESP32
-    // ===============================
-    broadcastCalibration(doc);
+// MQTT 優先
+const mqttOk = await publishJson(topicCalibration(), doc, {
+  qos: 1,
+  retain: true
+});
 
-    // ===============================
-    // MQTT 推送給 ESP32
-    // 校正資料屬於狀態資料，retain: true 是合理的
-    // ESP32 重連後可以拿到最新校正值
-    // ===============================
-    publishJson(topicCalibration(), doc, {
-      qos: 1,
-      retain: true
-    });
+// MQTT 失敗才用 WebSocket 備援
+if (!mqttOk) {
+  console.log("⚠️ MQTT calibration failed，改用 WebSocket 備援");
+  broadcastCalibration(doc);
+}
 
-    console.log("Calibration sent by WebSocket + MQTT");
-    console.log("MQTT topic:", topicCalibration());
-
-    res.json({
-      success: true,
-      message: "校正資料更新成功，已透過 WebSocket + MQTT 推送",
-      websocketClients: getClientCount(),
-      data: doc
-    });
+res.json({
+  success: true,
+  message: mqttOk
+    ? "校正資料更新成功，已透過 MQTT 推送"
+    : "校正資料更新成功，已透過 WebSocket 備援推送",
+  mqttOk,
+  websocketClients: getClientCount(),
+  data: doc
+});
 
   } catch (error) {
     console.error("POST /calibration error:", error);

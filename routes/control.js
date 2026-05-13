@@ -59,7 +59,6 @@ router.post("/control", async (req, res) => {
       updatedAt: new Date()
     };
 
-    // 1. 先更新 MongoDB 目前控制狀態
     const state = await ControlState.findOneAndUpdate(
       {},
       newState,
@@ -69,25 +68,20 @@ router.post("/control", async (req, res) => {
       }
     ).lean();
 
-    // 2. 更新 Node 記憶體快取
     latestControlCache = state;
 
-    // 3. 立刻用 WebSocket 推送給 ESP32
-    broadcastControl(latestControlCache);
-
-    // 4. 用 MQTT 推送給 ESP32
-    // 注意：
-    // control 裡面可能包含 servo: true 這種瞬間動作，
-    // 所以這裡 retain 建議 false，避免 ESP32 斷線重連後重複餵食。
-    publishJson(topicControl(), latestControlCache, {
+    // MQTT 優先
+    const mqttOk = await publishJson(topicControl(), latestControlCache, {
       qos: 1,
       retain: false
     });
 
-    console.log("Control sent by WebSocket + MQTT");
-    console.log("MQTT topic:", topicControl());
+    // MQTT 失敗才用 WebSocket 備援
+    if (!mqttOk) {
+      console.log("⚠️ MQTT control failed，改用 WebSocket 備援");
+      broadcastControl(latestControlCache);
+    }
 
-    // 5. 寫入歷史紀錄
     await ControlHistory.create({
       ...data,
       timestamp: new Date()
@@ -95,7 +89,10 @@ router.post("/control", async (req, res) => {
 
     res.json({
       status: "ok",
-      message: "Control updated by WebSocket + MQTT",
+      message: mqttOk
+        ? "Control updated by MQTT"
+        : "Control updated by WebSocket fallback",
+      mqttOk,
       websocketClients: getClientCount(),
       state: latestControlCache
     });
