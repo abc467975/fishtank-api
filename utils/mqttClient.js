@@ -41,37 +41,46 @@ if (!MQTT_URL) {
   });
 }
 
+
+// 這個函式一定要回傳 Promise<boolean>
+// true  = MQTT publish 成功
+// false = MQTT publish 失敗，讓 route 啟用 WebSocket 備援
 function publishJson(topic, data, options = {}) {
-  if (!client) {
-    console.warn("⚠️ MQTT client 尚未建立，無法 publish:", topic);
-    return;
-  }
+  return new Promise((resolve) => {
+    if (!client) {
+      console.warn("⚠️ MQTT client 尚未建立，無法 publish:", topic);
+      return resolve(false);
+    }
 
-  // 注意：connected 是屬性，不是函式
-  if (!client.connected) {
-    console.warn("⚠️ MQTT 尚未連線，無法 publish:", topic);
-    return;
-  }
+    // 注意：connected 是屬性，不是函式
+    if (!client.connected) {
+      console.warn("⚠️ MQTT 尚未連線，無法 publish:", topic);
+      return resolve(false);
+    }
 
-  const payload = JSON.stringify(data);
+    const payload = JSON.stringify(data);
 
-  client.publish(
-    topic,
-    payload,
-    {
-      qos: options.qos ?? 1,
-      retain: options.retain ?? false
-    },
-    (err) => {
-      if (err) {
-        console.error("❌ MQTT publish failed:", err.message);
-      } else {
+    client.publish(
+      topic,
+      payload,
+      {
+        qos: options.qos ?? 1,
+        retain: options.retain ?? false
+      },
+      (err) => {
+        if (err) {
+          console.error("❌ MQTT publish failed:", err.message);
+          return resolve(false);
+        }
+
         console.log("📡 MQTT published:", topic);
         console.log(payload);
+        return resolve(true);
       }
-    }
-  );
+    );
+  });
 }
+
 
 function topicControl() {
   return `fish/control/${MQTT_DEVICE_ID}`;
@@ -84,6 +93,7 @@ function topicSettings() {
 function topicCalibration() {
   return `fish/calibration/${MQTT_DEVICE_ID}`;
 }
+
 
 module.exports = {
   publishJson,
