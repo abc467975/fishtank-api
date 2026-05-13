@@ -1,12 +1,11 @@
 const express = require("express");
 const mongoose = require("mongoose");
 
-const {
-  broadcastCalibration,
-  getClientCount
-} = require("../utils/wsHub");
+const { broadcastCalibration, getClientCount } = require("../utils/wsHub");
+const { publishJson, topicCalibration } = require("../utils/mqttClient");
 
 const router = express.Router();
+
 
 // ===============================
 // MongoDB Schema
@@ -53,7 +52,12 @@ const calibrationSchema = new mongoose.Schema(
   }
 );
 
-const Calibration = mongoose.model("Calibration", calibrationSchema);
+
+// 避免 Render / nodemon 熱重載時重複註冊 model 報錯
+const Calibration =
+  mongoose.models.Calibration ||
+  mongoose.model("Calibration", calibrationSchema);
+
 
 // ===============================
 // GET /api/calibration
@@ -65,7 +69,7 @@ router.get("/calibration", async (req, res) => {
     let doc = await Calibration.findOne({ device_id: deviceId }).lean();
 
     if (!doc) {
-      doc = await Calibration.create({
+      const createdDoc = await Calibration.create({
         device_id: deviceId,
         calibration_mode: false,
         ph4_raw: 0,
@@ -75,7 +79,7 @@ router.get("/calibration", async (req, res) => {
         updated_at: new Date()
       });
 
-      doc = doc.toObject();
+      doc = createdDoc.toObject();
     }
 
     res.json({
@@ -95,11 +99,14 @@ router.get("/calibration", async (req, res) => {
   }
 });
 
+
 // ===============================
 // POST /api/calibration
 // ===============================
 router.post("/calibration", async (req, res) => {
   try {
+    console.log("POST /calibration received:", req.body);
+
     const {
       device_id = "default_device",
       calibration_mode = false,
@@ -110,6 +117,7 @@ router.post("/calibration", async (req, res) => {
     } = req.body;
 
     const updateData = {
+      device_id,
       calibration_mode,
       ph4_raw,
       ph7_raw,
@@ -132,9 +140,22 @@ router.post("/calibration", async (req, res) => {
     // ===============================
     broadcastCalibration(doc);
 
+    // ===============================
+    // MQTT 推送給 ESP32
+    // 校正資料屬於狀態資料，retain: true 是合理的
+    // ESP32 重連後可以拿到最新校正值
+    // ===============================
+    publishJson(topicCalibration(), doc, {
+      qos: 1,
+      retain: true
+    });
+
+    console.log("Calibration sent by WebSocket + MQTT");
+    console.log("MQTT topic:", topicCalibration());
+
     res.json({
       success: true,
-      message: "校正資料更新成功",
+      message: "校正資料更新成功，已透過 WebSocket + MQTT 推送",
       websocketClients: getClientCount(),
       data: doc
     });
@@ -149,5 +170,6 @@ router.post("/calibration", async (req, res) => {
     });
   }
 });
+
 
 module.exports = router;
