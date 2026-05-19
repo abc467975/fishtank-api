@@ -4,7 +4,10 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 
-const { addClient } = require("./utils/wsHub");
+const {
+  addClient,
+  broadcastSensorToApps
+} = require("./utils/wsHub");
 
 const app = express();
 
@@ -53,16 +56,34 @@ const wss = new WebSocket.Server({
 });
 
 wss.on("connection", (ws, req) => {
-  console.log("ESP32 WebSocket connected");
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const role = url.searchParams.get("role") || "esp32";
 
-  addClient(ws);
+  console.log(`${role} WebSocket connected`);
+
+  addClient(ws, role);
 
   ws.send(JSON.stringify({
     type: "connected",
+    role: role,
     message: "WebSocket connected to Node server"
   }));
-});
 
+  ws.on("message", (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+
+      console.log(`收到 ${role} WebSocket 資料:`, data);
+
+      if (role === "esp32") {
+        broadcastSensorToApps(data);
+      }
+
+    } catch (err) {
+      console.error("WebSocket JSON parse error:", err.message);
+    }
+  });
+});
 server.listen(5000, () => {
   console.log("🚀 Server running on 5000");
   console.log("🔌 WebSocket path: /ws");
