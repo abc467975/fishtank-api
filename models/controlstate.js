@@ -13,13 +13,12 @@ const ControlStateSchema = new mongoose.Schema({
   aerator: { type: Boolean, default: false },       // 氣泵
 
   // ===== 新增：手動控制開關 =====
-  heaterTank: { type: Boolean, default: false },    // 魚缸加熱棒
-  heaterBucket: { type: Boolean, default: false },  // 新水桶加熱棒
+  heating: { type: Boolean, default: false },     // 魚缸加熱棒
+  heating2: { type: Boolean, default: false },  // 新水桶加熱棒
   filter: { type: Boolean, default: false },        // 過濾器
   led: { type: Boolean, default: false },           // LED燈
 
   // ===== 舊欄位：暫時保留，避免舊程式還在用 heating 時出錯 =====
-  heating: { type: Boolean, default: false },       // 舊加熱棒欄位
 
   peristaltic1_pwm: { type: Number, default: 0 },
   peristaltic2_pwm: { type: Number, default: 0 },

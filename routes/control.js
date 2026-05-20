@@ -47,13 +47,13 @@ router.get("/control", async (req, res) => {
       aerator: false,
 
       // 新增控制項
-      heaterTank: false,       // 魚缸加熱棒
-      heaterBucket: false,     // 新水桶加熱棒
+      heating: false,       // 魚缸加熱棒
+      heating2: false,     // 新水桶加熱棒
       filter: false,           // 過濾器
       led: false,              // LED燈
 
       // 舊欄位，暫時保留
-      heating: false,
+      
 
       peristaltic1_pwm: 0,
       peristaltic2_pwm: 0,
@@ -107,14 +107,12 @@ router.post("/control", async (req, res) => {
       aerator: data.aerator ?? false,
 
       // ===== 新增：手動控制開關 =====
-      heaterTank: data.heaterTank ?? false,        // 魚缸加熱棒
-      heaterBucket: data.heaterBucket ?? false,    // 新水桶加熱棒
+      heating: data.heaterTank ?? false,        // 魚缸加熱棒
+      heating2: data.heaterBucket ?? false,    // 新水桶加熱棒
       filter: data.filter ?? false,                // 過濾器
       led: data.led ?? false,                      // LED燈
 
-      // ===== 舊欄位：暫時保留 =====
-      heating: data.heating ?? false,
-
+      
       peristaltic1_pwm: data.peristaltic1_pwm ?? 0,
       peristaltic2_pwm: data.peristaltic2_pwm ?? 0,
 
