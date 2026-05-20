@@ -107,8 +107,8 @@ router.post("/control", async (req, res) => {
       aerator: data.aerator ?? false,
 
       // ===== 新增：手動控制開關 =====
-      heating: data.heaterTank ?? false,        // 魚缸加熱棒
-      heating2: data.heaterBucket ?? false,    // 新水桶加熱棒
+      heating: data.heating ?? false,        // 魚缸加熱棒
+      heating2: data.heating2 ?? false,    // 新水桶加熱棒
       filter: data.filter ?? false,                // 過濾器
       led: data.led ?? false,                      // LED燈
 
