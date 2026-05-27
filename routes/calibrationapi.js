@@ -22,6 +22,11 @@ const calibrationSchema = new mongoose.Schema(
       default: true
     },
 
+    calibration_mode1: {
+      type: Boolean,
+      default: true
+    },
+
     ph4_raw: {
       type: Number,
       required: true
@@ -72,6 +77,7 @@ router.get("/calibration", async (req, res) => {
       const createdDoc = await Calibration.create({
         device_id: deviceId,
         calibration_mode: false,
+        calibration_mode1: false,
         ph4_raw: 0,
         ph7_raw: 0,
         do_0_raw: 0,
@@ -110,6 +116,7 @@ router.post("/calibration", async (req, res) => {
     const {
       device_id = "default_device",
       calibration_mode = false,
+      calibration_mode1 = false,
       ph4_raw = 0,
       ph7_raw = 0,
       do_0_raw = 0,
@@ -119,6 +126,7 @@ router.post("/calibration", async (req, res) => {
     const updateData = {
       device_id,
       calibration_mode,
+      calibration_mode1,
       ph4_raw,
       ph7_raw,
       do_0_raw,
