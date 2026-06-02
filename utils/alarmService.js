@@ -18,6 +18,7 @@ function isValidNumber(value) {
    ===================================================== */
 
 function buildAlarmMessage({
+  sensorType,
   sensorName,
   alarmType,
   value,
@@ -26,6 +27,17 @@ function buildAlarmMessage({
   unit
 }) {
   const displayValue = Number(value).toFixed(2);
+
+  /*
+    濁度感測器為反向數值：
+    數值越低，代表水越混濁。
+  */
+  if (
+    sensorType === "turbidity" &&
+    alarmType === "low"
+  ) {
+    return `水質過於混濁：目前感測值為 ${displayValue}${unit}，警報門檻為 ${minValue}${unit}`;
+  }
 
   if (alarmType === "low") {
     return `${sensorName}過低：目前為 ${displayValue}${unit}，門檻為 ${minValue}${unit}`;
@@ -53,13 +65,14 @@ async function upsertActiveAlarm({
     `${deviceId}:${sensorType}:${alarmType}`;
 
   const message = buildAlarmMessage({
-    sensorName,
-    alarmType,
-    value,
-    minValue,
-    maxValue,
-    unit
-  });
+  sensorType,
+  sensorName,
+  alarmType,
+  value,
+  minValue,
+  maxValue,
+  unit
+});
 
   /*
     已存在相同且尚未解除的警報：

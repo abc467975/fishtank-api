@@ -249,15 +249,20 @@ router.post("/sensor", async (req, res) => {
       }),
 
       /*
-        濁度：
-        只判斷是否高於 turb_max。
+      濁度感測器數值越低，代表水越混濁。
+
+      turb_max 雖然名稱保留原本格式，
+      但實際用途是「混濁警報門檻」。
+
+      當感測值低於 turb_max 時，
+      代表水質過於混濁，需要換水。
       */
       evaluateAndSaveAlarm({
         deviceId,
         sensorType: "turbidity",
         sensorName: "濁度",
         value: turbidityValue,
-        maxValue:
+        minValue:
           latestSettings?.turb_max,
         unit: ""
       })
