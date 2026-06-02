@@ -1,5 +1,9 @@
 const Alarm = require("../models/Alarm");
 
+const {
+  broadcastAlarm
+} = require("./wsHub");
+
 /* =====================================================
    確認資料是否為有效數字
    ===================================================== */
@@ -140,6 +144,15 @@ async function upsertActiveAlarm({
     alarm_key: alarmKey
   });
 
+  /*
+  僅在第一次建立警報時推送。
+  持續異常時只更新資料庫，不重複通知 App。
+*/
+broadcastAlarm(
+  "created",
+  newAlarm.toObject()
+);
+
   return {
     action: "created",
     alarm: newAlarm
@@ -154,6 +167,8 @@ async function resolveSensorAlarms({
   deviceId,
   sensorType
 }) {
+  const resolvedAt = new Date();
+
   const result = await Alarm.updateMany(
     {
       device_id: deviceId,
@@ -165,10 +180,27 @@ async function resolveSensorAlarms({
     {
       $set: {
         status: "resolved",
-        resolved_at: new Date()
+        resolved_at: resolvedAt
       }
     }
   );
+
+  /*
+    只有真的解除至少一筆警報時才推送。
+
+    避免感測器數值正常時，
+    每次 ESP32 上傳資料都一直推播給 App。
+  */
+  if (result.modifiedCount > 0) {
+    broadcastAlarm(
+      "resolved",
+      {
+        device_id: deviceId,
+        sensor_type: sensorType,
+        resolved_at: resolvedAt
+      }
+    );
+  }
 
   return {
     action: "resolved",

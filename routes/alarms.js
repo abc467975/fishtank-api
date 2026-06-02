@@ -3,6 +3,9 @@ const router = express.Router();
 
 const Alarm = require("../models/Alarm");
 
+const {
+  broadcastAlarm
+} = require("../utils/wsHub");
 /**
  * GET /api/alarms
  *
@@ -110,11 +113,20 @@ router.patch("/alarms/:id/acknowledge", async (req, res) => {
 
     await alarm.save();
 
-    return res.json({
-      success: true,
-      message: "警報已確認",
-      data: alarm
-    });
+/*
+  通知其他 App 畫面：
+  此警報已被使用者確認。
+*/
+broadcastAlarm(
+  "acknowledged",
+  alarm.toObject()
+);
+
+return res.json({
+  success: true,
+  message: "警報已確認",
+  data: alarm
+});
   } catch (error) {
     console.error("❌ PATCH acknowledge alarm error:", error);
 
