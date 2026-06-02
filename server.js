@@ -42,6 +42,7 @@ app.use("/api", require("./routes/settings"));
 // 如果你之後要鎖 control，再打開這行
 // app.use("/api/control", verifyApiKey);
 app.use("/api", require("./routes/control"));
+app.use("/api", require("./routes/alarms"));
 
 
 /* =========================
