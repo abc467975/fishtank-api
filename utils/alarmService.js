@@ -1,8 +1,22 @@
 const Alarm = require("../models/Alarm");
 
-/**
- * 產生 App 顯示用的警報文字
- */
+/* =====================================================
+   確認資料是否為有效數字
+   ===================================================== */
+
+function isValidNumber(value) {
+  return (
+    value !== null &&
+    value !== undefined &&
+    value !== "" &&
+    !Number.isNaN(Number(value))
+  );
+}
+
+/* =====================================================
+   建立警報文字
+   ===================================================== */
+
 function buildAlarmMessage({
   sensorName,
   alarmType,
@@ -14,15 +28,16 @@ function buildAlarmMessage({
   const displayValue = Number(value).toFixed(2);
 
   if (alarmType === "low") {
-    return `${sensorName}過低：目前為 ${displayValue}${unit}，正常下限為 ${minValue}${unit}`;
+    return `${sensorName}過低：目前為 ${displayValue}${unit}，門檻為 ${minValue}${unit}`;
   }
 
-  return `${sensorName}過高：目前為 ${displayValue}${unit}，正常上限為 ${maxValue}${unit}`;
+  return `${sensorName}過高：目前為 ${displayValue}${unit}，門檻為 ${maxValue}${unit}`;
 }
 
-/**
- * 建立或更新異常警報
- */
+/* =====================================================
+   建立或更新異常警報
+   ===================================================== */
+
 async function upsertActiveAlarm({
   deviceId,
   sensorType,
@@ -30,11 +45,12 @@ async function upsertActiveAlarm({
   alarmType,
   severity = "warning",
   value,
-  minValue,
-  maxValue,
+  minValue = null,
+  maxValue = null,
   unit = ""
 }) {
-  const alarmKey = `${deviceId}:${sensorType}:${alarmType}`;
+  const alarmKey =
+    `${deviceId}:${sensorType}:${alarmType}`;
 
   const message = buildAlarmMessage({
     sensorName,
@@ -45,7 +61,10 @@ async function upsertActiveAlarm({
     unit
   });
 
-  // 找尋相同類型、尚未解除的警報
+  /*
+    已存在相同且尚未解除的警報：
+    更新數值與時間，不新增重複資料。
+  */
   const existingAlarm = await Alarm.findOne({
     alarm_key: alarmKey,
     status: {
@@ -53,11 +72,18 @@ async function upsertActiveAlarm({
     }
   });
 
-  // 已有警報時，只更新最新數值，不新增重複資料
   if (existingAlarm) {
-    existingAlarm.value = value;
-    existingAlarm.min_value = minValue;
-    existingAlarm.max_value = maxValue;
+    existingAlarm.value = Number(value);
+    existingAlarm.min_value =
+      isValidNumber(minValue)
+        ? Number(minValue)
+        : null;
+
+    existingAlarm.max_value =
+      isValidNumber(maxValue)
+        ? Number(maxValue)
+        : null;
+
     existingAlarm.message = message;
     existingAlarm.last_detected_at = new Date();
 
@@ -69,21 +95,35 @@ async function upsertActiveAlarm({
     };
   }
 
-  // 第一次偵測到異常，建立警報
+  /*
+    第一次偵測到異常：
+    建立新的警報資料。
+  */
   const newAlarm = await Alarm.create({
     device_id: deviceId,
     sensor_type: sensorType,
     sensor_name: sensorName,
     alarm_type: alarmType,
     severity,
-    value,
-    min_value: minValue,
-    max_value: maxValue,
+    value: Number(value),
+
+    min_value:
+      isValidNumber(minValue)
+        ? Number(minValue)
+        : null,
+
+    max_value:
+      isValidNumber(maxValue)
+        ? Number(maxValue)
+        : null,
+
     unit,
     message,
     status: "active",
+
     first_detected_at: new Date(),
     last_detected_at: new Date(),
+
     alarm_key: alarmKey
   });
 
@@ -93,9 +133,10 @@ async function upsertActiveAlarm({
   };
 }
 
-/**
- * 感測器恢復正常後，解除該感測器目前所有警報
- */
+/* =====================================================
+   數值恢復正常：解除指定感測器的警報
+   ===================================================== */
+
 async function resolveSensorAlarms({
   deviceId,
   sensorType
@@ -118,41 +159,60 @@ async function resolveSensorAlarms({
 
   return {
     action: "resolved",
+    sensorType,
     modifiedCount: result.modifiedCount
   };
 }
 
-/**
- * 判斷單一感測器狀態
- */
+/* =====================================================
+   判斷單一感測器是否異常
+   ===================================================== */
+
 async function evaluateAndSaveAlarm({
   deviceId,
   sensorType,
   sensorName,
   value,
-  minValue,
-  maxValue,
+  minValue = null,
+  maxValue = null,
   unit = ""
 }) {
-  // 避免 null、undefined 或 NaN 造成錯誤警報
-  if (
-    value === null ||
-    value === undefined ||
-    minValue === null ||
-    minValue === undefined ||
-    maxValue === null ||
-    maxValue === undefined ||
-    Number.isNaN(Number(value))
-  ) {
+  /*
+    感測器沒有有效數值：
+    略過，不新增警報。
+  */
+  if (!isValidNumber(value)) {
     return {
       action: "skipped",
-      reason: "invalid_value_or_setting"
+      sensorType,
+      reason: "invalid_sensor_value"
+    };
+  }
+
+  const hasMin = isValidNumber(minValue);
+  const hasMax = isValidNumber(maxValue);
+
+  /*
+    沒有設定任何門檻：
+    略過，不新增警報。
+  */
+  if (!hasMin && !hasMax) {
+    return {
+      action: "skipped",
+      sensorType,
+      reason: "threshold_not_configured"
     };
   }
 
   const numericValue = Number(value);
 
-  if (numericValue < Number(minValue)) {
+  /*
+    低於下限
+  */
+  if (
+    hasMin &&
+    numericValue < Number(minValue)
+  ) {
     return upsertActiveAlarm({
       deviceId,
       sensorType,
@@ -165,7 +225,13 @@ async function evaluateAndSaveAlarm({
     });
   }
 
-  if (numericValue > Number(maxValue)) {
+  /*
+    高於上限
+  */
+  if (
+    hasMax &&
+    numericValue > Number(maxValue)
+  ) {
     return upsertActiveAlarm({
       deviceId,
       sensorType,
@@ -178,6 +244,10 @@ async function evaluateAndSaveAlarm({
     });
   }
 
+  /*
+    數值位於正常範圍：
+    將舊警報改為 resolved。
+  */
   return resolveSensorAlarms({
     deviceId,
     sensorType
