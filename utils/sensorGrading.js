@@ -14,6 +14,10 @@ const DEFAULT_LIMITS = {
 
   do_min: 5.0,
 
+  // 濁度 raw 的最低安全門檻
+  // raw 越低代表越混濁
+  turb_max: 580,
+
   // 黃色警告緩衝區
   temperature_warning_margin: 1.0,
   ph_warning_margin: 0.5,
@@ -103,18 +107,18 @@ function resolveLimits(settings) {
       DEFAULT_LIMITS.do_warning_margin
   };
 }
-
 /* =====================================================
    區塊 B：濁度 raw 定級
    Arduino 傳入 raw ADC 值
    raw 越高 → 越清澈
    raw 越低 → 越混濁
 
-   limits.turb_max 雖然名稱為 max，
-   實際用途是「最低安全 raw 門檻」。
+   注意：
+   這裡只負責畫面顯示分級。
+   不使用 Settings.turb_max。
    ===================================================== */
 
-function gradeTurbidityRaw(raw, limits) {
+function gradeTurbidityRaw(raw) {
   if (!isValidNumber(raw)) {
     return {
       level: "UNKNOWN",
@@ -124,32 +128,21 @@ function gradeTurbidityRaw(raw, limits) {
 
   const value = Number(raw);
 
-  // App 設定的最低安全 raw 門檻
-  const safeMin = limits.turb_max;
-
-  // 保留原本分級距離：
-  // GREEN  比最低安全門檻高 70 以上
-  // YELLOW 尚未低於安全門檻
-  // ORANGE 低於安全門檻，但尚未嚴重混濁
-  // RED    嚴重混濁
-  const greenMin = safeMin + 70;
-  const redMax = safeMin - 130;
-
-  if (value >= greenMin) {
+  if (value >= 650) {
     return {
       level: "GREEN",
       label: "清澈"
     };
   }
 
-  if (value >= safeMin) {
+  if (value >= 580) {
     return {
       level: "YELLOW",
       label: "微濁"
     };
   }
 
-  if (value >= redMax) {
+  if (value >= 450) {
     return {
       level: "ORANGE",
       label: "中濁"
@@ -403,10 +396,10 @@ function evaluateSensor(doc, settings = null) {
     limits
   );
 
-  // 濁度：暫時使用 raw 固定分級
+  // 濁度：使用 Arduino raw 固定分級
+  // Settings.turb_max 留給自動換水判斷使用
   const turbGrade = gradeTurbidityRaw(
-  doc.Turb,
-  limits
+  doc.Turb
 );
 
   // 平均溫度：
