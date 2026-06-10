@@ -94,14 +94,17 @@ router.post("/sensor", async (req, res) => {
     for (const s of sensors) {
       if (s.value === null) continue;
 
-      let lastAlarm = await Alarm.findOne({ device_id: deviceId, sensor_type: s.sensorType }).sort({ createdAt: -1 });
+      const alarmKey = `${deviceId}:${s.sensorType}`;
+
+      let lastAlarm = await Alarm.findOne({ alarm_key: alarmKey });
 
       // 判斷是否觸發
-      let triggered = false;
-      if ((s.min !== null && s.value < s.min) || (s.max !== null && s.value > s.max)) triggered = true;
+      let triggered = (s.min !== null && s.value < s.min) || (s.max !== null && s.value > s.max);
 
-      // 浮動值不算變化
-      if (lastAlarm && Math.abs(s.value - lastAlarm.value) < THRESHOLD) triggered = lastAlarm.active;
+      // 浮動值不算改變
+      if (lastAlarm && Math.abs(s.value - lastAlarm.value) < THRESHOLD) {
+        triggered = lastAlarm.active;
+      }
 
       // 防重複推播
       if (lastAlarm && lastAlarm.active === triggered && lastAlarm.lastSentAt) {
@@ -114,7 +117,7 @@ router.post("/sensor", async (req, res) => {
 
       // 儲存或更新警報
       const alarm = await Alarm.findOneAndUpdate(
-        { device_id: deviceId, sensor_type: s.sensorType },
+        { alarm_key: alarmKey },
         {
           value: s.value,
           sensor_name: s.sensorName,
@@ -123,7 +126,10 @@ router.post("/sensor", async (req, res) => {
           lastSentAt: triggered ? new Date() : lastAlarm?.lastSentAt || null,
           alarm_type: (s.max !== null && s.value > s.max) ? "high" : "low",
           severity: triggered && s.value > (s.max || Infinity) ? "critical" : "warning",
-          message: `${s.sensorName} 異常，數值 ${s.value}${s.unit}`
+          message: `${s.sensorName} 異常，數值 ${s.value}${s.unit}`,
+          status: triggered ? "active" : "resolved",
+          first_detected_at: lastAlarm?.first_detected_at || new Date(),
+          last_detected_at: new Date()
         },
         { upsert: true, new: true }
       );
