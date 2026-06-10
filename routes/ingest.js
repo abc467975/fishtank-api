@@ -4,340 +4,162 @@ console.log("🔥 ingest router loaded");
 
 const express = require("express");
 const router = express.Router();
-
 const mongoose = require("mongoose");
 
 const SensorData = require("../models/SensorData");
 const Settings = require("../models/Settings");
 
-const {
-  evaluateSensor
-} = require("../utils/sensorGrading");
+const { evaluateSensor } = require("../utils/sensorGrading");
+const { evaluateAndSaveAlarm } = require("../utils/alarmService");
 
-const {
-  evaluateAndSaveAlarm
-} = require("../utils/alarmService");
+// FCM 推播
+const { sendAlarmPush } = require("../utils/fcmService");
 
-/* =====================================================
-   MongoDB 連線確認
-   ===================================================== */
+// FCM Token Collection
+const FcmToken = require("../models/fcmToken");
 
+// ----------------------------
+// 防呆：同一警報最少多久推播一次
+// ----------------------------
+const PUSH_INTERVAL = 5 * 60 * 1000; // 5 分鐘
+
+/* MongoDB 連線確認 */
 mongoose.connection.on("connected", () => {
   console.log("✔ MongoDB ready (ingest)");
 });
 
-/* =====================================================
-   工具函式：確認資料是否為有效數字
-   ===================================================== */
-
 function isValidNumber(value) {
-  return (
-    value !== null &&
-    value !== undefined &&
-    value !== "" &&
-    !Number.isNaN(Number(value))
-  );
+  return value !== null && value !== undefined && value !== "" && !Number.isNaN(Number(value));
 }
-
-/* =====================================================
-   工具函式：計算平均值
-   ===================================================== */
 
 function calculateAverage(values) {
-  const validValues = values
-    .filter(isValidNumber)
-    .map(Number);
-
-  if (validValues.length === 0) {
-    return null;
-  }
-
-  const total = validValues.reduce(
-    (sum, value) => sum + value,
-    0
-  );
-
-  return total / validValues.length;
+  const validValues = values.filter(isValidNumber).map(Number);
+  if (validValues.length === 0) return null;
+  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
 }
 
-/* =====================================================
-   工具函式：優先使用校正後數值
-   ===================================================== */
-
-function getPreferredValue(
-  calibratedValue,
-  rawValue
-) {
-  if (isValidNumber(calibratedValue)) {
-    return Number(calibratedValue);
-  }
-
-  if (isValidNumber(rawValue)) {
-    return Number(rawValue);
-  }
-
+function getPreferredValue(calibratedValue, rawValue) {
+  if (isValidNumber(calibratedValue)) return Number(calibratedValue);
+  if (isValidNumber(rawValue)) return Number(rawValue);
   return null;
 }
 
-/* =====================================================
-   ESP32 上傳感測器資料
-   POST /api/sensor
-   ===================================================== */
-
+/* ESP32 上傳感測器資料 */
 router.post("/sensor", async (req, res) => {
-  /* -----------------------------------------
-     0. 確認 MongoDB 是否已連線
-     readyState === 1 代表 connected
-     ----------------------------------------- */
-
   if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({
-      error: "DB not ready"
-    });
+    return res.status(503).json({ error: "DB not ready" });
   }
 
   try {
     const now = Date.now();
-
-    /* -----------------------------------------
-       1. 整理 ESP32 上傳資料
-       ----------------------------------------- */
-
     const baseData = {
       ...req.body,
-
       timestamp: now,
-
-      time: new Date(now).toLocaleString(
-        "zh-TW",
-        {
-          timeZone: "Asia/Taipei"
-        }
-      )
+      time: new Date(now).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })
     };
 
-    /* -----------------------------------------
-       2. 取得最新 Settings
-       ----------------------------------------- */
+    // 取得最新設定
+    const latestSettings = await Settings.findOne().sort({ time: -1 }).lean();
 
-    const latestSettings = await Settings
-      .findOne()
-      .sort({
-        time: -1
-      })
-      .lean();
+    const grading = evaluateSensor(baseData, latestSettings);
 
-    /*
-      latestSettings 若為 null：
-      sensorGrading.js 會依照你原本的邏輯處理。
+    const data = { ...baseData, grading };
+    const savedData = await SensorData.create(data);
 
-      警報功能則會略過沒有門檻的項目，
-      避免產生錯誤警報。
-    */
+    // ----------------------------
+    // 計算各項數值
+    // ----------------------------
+    const averageTemperature = calculateAverage([baseData.T1, baseData.T2, baseData.T3]);
+    const phValue = getPreferredValue(baseData.pH_value, baseData.pH);
+    const doValue = getPreferredValue(baseData.DO_value, baseData.DO);
+    const turbidityValue = isValidNumber(baseData.Turb) ? Number(baseData.Turb) : null;
 
-    /* -----------------------------------------
-       3. 執行原本的感測器分級
-       ----------------------------------------- */
+    const deviceId = baseData.device_id || "fish_Tank_001";
 
-    const grading = evaluateSensor(
-      baseData,
-      latestSettings
-    );
-
-    /* -----------------------------------------
-       4. 儲存感測器資料與分級結果
-       ----------------------------------------- */
-
-    const data = {
-      ...baseData,
-      grading
-    };
-
-    const savedData = await SensorData.create(
-      data
-    );
-
-    /* -----------------------------------------
-       5. 整理警報判斷數值
-       ----------------------------------------- */
-
-    /*
-      T1、T2、T3：魚缸內的三支溫度感測器。
-      T4：新水桶溫度，不納入魚缸平均溫度警報。
-    */
-    const averageTemperature =
-      calculateAverage([
-        baseData.T1,
-        baseData.T2,
-        baseData.T3
-      ]);
-
-    /*
-      pH 與 DO 優先使用校正後數值。
-      若尚未收到校正後欄位，再退回原始欄位。
-    */
-    const phValue = getPreferredValue(
-      baseData.pH_value,
-      baseData.pH
-    );
-
-    const doValue = getPreferredValue(
-      baseData.DO_value,
-      baseData.DO
-    );
-
-    const turbidityValue =
-      isValidNumber(baseData.Turb)
-        ? Number(baseData.Turb)
-        : null;
-
-    /* -----------------------------------------
-       6. 依照設定值執行警報判斷
-       ----------------------------------------- */
-
-    const deviceId =
-      baseData.device_id ||
-      "fish_Tank_001";
-
+    // ----------------------------
+    // 判斷警報
+    // ----------------------------
     const alarmResults = await Promise.all([
-      /*
-        溫度：
-        低於 temperature_min 或
-        高於 temperature_max 都要警報。
-      */
       evaluateAndSaveAlarm({
         deviceId,
         sensorType: "temperature",
         sensorName: "魚缸溫度",
         value: averageTemperature,
-        minValue:
-          latestSettings?.temperature_min,
-        maxValue:
-          latestSettings?.temperature_max,
+        minValue: latestSettings?.temperature_min,
+        maxValue: latestSettings?.temperature_max,
         unit: "°C"
       }),
-
-      /*
-        pH：
-        低於 ph_min 或
-        高於 ph_max 都要警報。
-      */
       evaluateAndSaveAlarm({
         deviceId,
         sensorType: "ph",
         sensorName: "pH",
         value: phValue,
-        minValue:
-          latestSettings?.ph_min,
-        maxValue:
-          latestSettings?.ph_max,
+        minValue: latestSettings?.ph_min,
+        maxValue: latestSettings?.ph_max,
         unit: ""
       }),
-
-      /*
-        溶氧：
-        只判斷是否低於 do_min。
-      */
       evaluateAndSaveAlarm({
         deviceId,
         sensorType: "do",
         sensorName: "溶氧量",
         value: doValue,
-        minValue:
-          latestSettings?.do_min,
+        minValue: latestSettings?.do_min,
         unit: " mg/L"
       }),
-
-      /*
-      濁度感測器數值越低，代表水越混濁。
-
-      turb_max 雖然名稱保留原本格式，
-      但實際用途是「混濁警報門檻」。
-
-      當感測值低於 turb_max 時，
-      代表水質過於混濁，需要換水。
-      */
       evaluateAndSaveAlarm({
         deviceId,
         sensorType: "turbidity",
         sensorName: "濁度",
         value: turbidityValue,
-        minValue:
-          latestSettings?.turb_max,
+        minValue: latestSettings?.turb_max,
         unit: ""
       })
     ]);
 
-    /* -----------------------------------------
-       7. 顯示測試 Log
-       ----------------------------------------- */
-
     console.log("✅ Sensor data inserted");
 
-    console.log(
-      "⚙ Latest settings:",
-      latestSettings
-    );
+    // ----------------------------
+    // FCM 推播：每個警報獨立，防呆處理
+    // ----------------------------
+    let tokens = await FcmToken.find({ active: true }).lean();
 
-    console.log("📊 Grading:", {
-      temperature:
-        grading.temperature,
+    // 如果 MongoDB 沒有 Token，暫時用 .env 測試 Token
+    if (tokens.length === 0 && process.env.TEST_FCM_TOKEN) {
+      tokens = [{ token: process.env.TEST_FCM_TOKEN }];
+    }
 
-      pH:
-        grading.pH,
+    alarmResults.forEach((result) => {
+      if (!result.alarm) return; // 沒有警報就跳過
+      const nowTime = Date.now();
 
-      DO:
-        grading.DO,
+      // 防呆：檢查 lastSentAt
+      if (result.alarm.lastSentAt && (nowTime - result.alarm.lastSentAt.getTime()) < PUSH_INTERVAL) {
+        console.log(`⏱ 忽略短時間重複推播: ${result.alarm.sensor_name}`);
+        return;
+      }
 
-      turbidity:
-        grading.turbidity,
+      // 更新 lastSentAt
+      result.alarm.lastSentAt = new Date();
 
-      waterLevel:
-        grading.waterLevel
+      tokens.forEach((t) => {
+        sendAlarmPush(t.token, result.alarm)
+          .then((messageId) => console.log(`✅ FCM 推播成功: ${messageId} -> ${t.token}`))
+          .catch((err) => console.error(`❌ FCM 推播失敗 token=${t.token}`, err.message));
+      });
     });
 
-    console.log(
-      "🚨 Alarm check:",
-      alarmResults.map(
-        (result) => ({
-          action:
-            result.action,
+    console.log("🚨 Alarm check:", alarmResults.map((result) => ({
+      action: result.action,
+      sensorType: result.sensorType || result.alarm?.sensor_type,
+      message: result.alarm?.message || result.reason || "",
+      modifiedCount: result.modifiedCount ?? 0
+    })));
 
-          sensorType:
-            result.sensorType ||
-            result.alarm?.sensor_type,
-
-          message:
-            result.alarm?.message ||
-            result.reason ||
-            "",
-
-          modifiedCount:
-            result.modifiedCount ?? 0
-        })
-      )
-    );
-
-    /* -----------------------------------------
-       8. 回傳給 ESP32
-       ----------------------------------------- */
-
-    return res.json({
-      ok: true,
-      id: savedData._id,
-      grading,
-      alarmResults
-    });
+    return res.json({ ok: true, id: savedData._id, grading, alarmResults });
 
   } catch (err) {
-    console.error(
-      "❌ insert fail",
-      err
-    );
-
-    return res.status(500).json({
-      error: "insert fail"
-    });
+    console.error("❌ insert fail", err);
+    return res.status(500).json({ error: "insert fail" });
   }
 });
 
