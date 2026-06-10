@@ -1,5 +1,5 @@
 // utils/firebaseAdmin.js
-1
+
 require("dotenv").config();
 
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
