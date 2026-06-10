@@ -1,5 +1,4 @@
 // routes/ingest.js
-
 console.log("🔥 ingest router loaded");
 
 const express = require("express");
@@ -8,10 +7,8 @@ const mongoose = require("mongoose");
 
 const SensorData = require("../models/SensorData");
 const Settings = require("../models/Settings");
-const Alarm = require("../models/Alarm"); // 新增 Alarm schema
-
+const Alarm = require("../models/Alarm"); // 警報 Schema
 const { evaluateSensor } = require("../utils/sensorGrading");
-const { evaluateAndSaveAlarm } = require("../utils/alarmService");
 const { sendAlarmPush } = require("../utils/fcmService");
 const FcmToken = require("../models/fcmToken");
 
@@ -19,23 +16,21 @@ const FcmToken = require("../models/fcmToken");
 // 防重複推播設定
 // ----------------------------
 const PUSH_INTERVAL = 5 * 60 * 1000; // 5 分鐘
+const THRESHOLD = 0.2; // 浮動容忍值，例如溫度 ±0.2 不算變化
 
-// ----------------------------
-// 工具函式
-// ----------------------------
 function isValidNumber(value) {
-  return value !== null && value !== undefined && value !== "" && !Number.isNaN(Number(value));
+  return value !== null && value !== undefined && !Number.isNaN(Number(value));
 }
 
 function calculateAverage(values) {
-  const validValues = values.filter(isValidNumber).map(Number);
-  if (validValues.length === 0) return null;
-  return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+  const valid = values.filter(isValidNumber).map(Number);
+  if (valid.length === 0) return null;
+  return valid.reduce((sum, v) => sum + v, 0) / valid.length;
 }
 
-function getPreferredValue(calibratedValue, rawValue) {
-  if (isValidNumber(calibratedValue)) return Number(calibratedValue);
-  if (isValidNumber(rawValue)) return Number(rawValue);
+function getPreferredValue(calibrated, raw) {
+  if (isValidNumber(calibrated)) return Number(calibrated);
+  if (isValidNumber(raw)) return Number(raw);
   return null;
 }
 
@@ -43,9 +38,8 @@ function getPreferredValue(calibratedValue, rawValue) {
 // ESP32 上傳感測器資料
 // ----------------------------
 router.post("/sensor", async (req, res) => {
-  if (mongoose.connection.readyState !== 1) {
+  if (mongoose.connection.readyState !== 1)
     return res.status(503).json({ error: "DB not ready" });
-  }
 
   try {
     const now = Date.now();
@@ -61,6 +55,7 @@ router.post("/sensor", async (req, res) => {
     const data = { ...baseData, grading };
     const savedData = await SensorData.create(data);
 
+    // 計算平均數值
     const averageTemperature = calculateAverage([baseData.T1, baseData.T2, baseData.T3]);
     const phValue = getPreferredValue(baseData.pH_value, baseData.pH);
     const doValue = getPreferredValue(baseData.DO_value, baseData.DO);
@@ -68,54 +63,57 @@ router.post("/sensor", async (req, res) => {
 
     const deviceId = baseData.device_id || "fish_Tank_001";
 
-    // ----------------------------
-    // 判斷警報並防重複推播
-    // ----------------------------
-    const alarmInputs = [
-      { sensorType: "temperature", sensorName: "魚缸溫度", value: averageTemperature, min: latestSettings?.temperature_min, max: latestSettings?.temperature_max, unit: "°C" },
-      { sensorType: "ph", sensorName: "pH", value: phValue, min: latestSettings?.ph_min, max: latestSettings?.ph_max, unit: "" },
-      { sensorType: "do", sensorName: "溶氧量", value: doValue, min: latestSettings?.do_min, max: null, unit: "mg/L" },
-      { sensorType: "turbidity", sensorName: "濁度", value: turbidityValue, min: latestSettings?.turb_max, max: null, unit: "" }
+    const sensors = [
+      { sensorType: "temperature", sensorName: "魚缸溫度", value: averageTemperature, min: latestSettings?.temperature_min, max: latestSettings?.temperature_max, unit: "°C", alarm_type: averageTemperature > latestSettings?.temperature_max ? "high" : "low" },
+      { sensorType: "ph", sensorName: "pH", value: phValue, min: latestSettings?.ph_min, max: latestSettings?.ph_max, unit: "", alarm_type: phValue > latestSettings?.ph_max ? "high" : "low" },
+      { sensorType: "do", sensorName: "溶氧量", value: doValue, min: latestSettings?.do_min, max: null, unit: "mg/L", alarm_type: doValue < latestSettings?.do_min ? "low" : "high" },
+      { sensorType: "turbidity", sensorName: "濁度", value: turbidityValue, min: latestSettings?.turb_max, max: null, unit: "", alarm_type: turbidityValue < latestSettings?.turb_max ? "low" : "high" }
     ];
 
     const alarmResults = [];
 
-    for (const alarmInput of alarmInputs) {
-      // 取得該感測器最後一次警報
-      let lastAlarm = await Alarm.findOne({ device_id: deviceId, sensor_type: alarmInput.sensorType }).sort({ createdAt: -1 });
+    for (const s of sensors) {
+      if (s.value === null) continue;
 
-      // 判斷是否要觸發警報
+      // 取最新警報
+      let lastAlarm = await Alarm.findOne({ device_id, sensor_type: s.sensorType }).sort({ createdAt: -1 });
+
+      // 判斷是否觸發
       let triggered = false;
-      if (alarmInput.value !== null) {
-        if ((alarmInput.min !== undefined && alarmInput.value < alarmInput.min) ||
-            (alarmInput.max !== undefined && alarmInput.value > alarmInput.max)) {
-          triggered = true;
-        }
+      if (s.min !== null && s.value < s.min) triggered = true;
+      if (s.max !== null && s.value > s.max) triggered = true;
+
+      // 浮動值不算變化
+      if (lastAlarm && Math.abs(s.value - lastAlarm.value) < THRESHOLD) {
+        triggered = lastAlarm.active;
       }
 
-      // 如果警報狀態沒變且未到推播間隔，直接返回
+      // 防重複推播
       if (lastAlarm && lastAlarm.active === triggered && lastAlarm.lastSentAt) {
         const diff = Date.now() - lastAlarm.lastSentAt.getTime();
         if (diff < PUSH_INTERVAL) {
           alarmResults.push(lastAlarm);
-          continue; // 不重複推播
+          continue;
         }
       }
 
-      // 儲存或更新警報
+      // 更新或新增警報
       const alarm = await Alarm.findOneAndUpdate(
-        { device_id: deviceId, sensor_type: alarmInput.sensorType },
+        { device_id, sensor_type: s.sensorType },
         {
-          value: alarmInput.value,
-          sensor_name: alarmInput.sensorName,
-          unit: alarmInput.unit,
+          value: s.value,
+          sensor_name: s.sensorName,
+          unit: s.unit,
           active: triggered,
-          lastSentAt: triggered ? new Date() : lastAlarm?.lastSentAt || null
+          lastSentAt: triggered ? new Date() : lastAlarm?.lastSentAt || null,
+          alarm_type: s.alarm_type,
+          severity: triggered && s.alarm_type === "high" ? "critical" : "warning",
+          message: `${s.sensorName} 異常，數值 ${s.value}${s.unit}`
         },
         { upsert: true, new: true }
       );
 
-      // 只有觸發警報才推播
+      // 只有觸發才推 FCM
       if (triggered) {
         const tokens = await FcmToken.find({ active: true });
         tokens.forEach(t => sendAlarmPush(t.token, alarm));
@@ -125,12 +123,6 @@ router.post("/sensor", async (req, res) => {
     }
 
     console.log("✅ Sensor data inserted");
-    console.log("🚨 Alarm check:", alarmResults.map(a => ({
-      sensorType: a.sensor_type,
-      active: a.active,
-      lastSentAt: a.lastSentAt
-    })));
-
     return res.json({ ok: true, id: savedData._id, grading, alarmResults });
 
   } catch (err) {
