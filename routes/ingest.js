@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
 
 const SensorData = require("../models/SensorData");
 const Settings = require("../models/Settings");
-const Alarm = require("../models/alarm"); // 新增 Alarm schema
+const Alarm = require("../models/Alarm"); // 新增 Alarm schema
 
 const { evaluateSensor } = require("../utils/sensorGrading");
 const { evaluateAndSaveAlarm } = require("../utils/alarmService");
