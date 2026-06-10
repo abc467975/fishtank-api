@@ -1,5 +1,8 @@
 // utils/fcmService.js
+
 const path = require("path");
+
+// 使用 __dirname 保證 Render 或 Linux 上路徑正確
 const { messaging } = require(path.join(__dirname, "firebaseAdmin"));
 
 /**
