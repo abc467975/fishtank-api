@@ -8,26 +8,21 @@ const mongoose = require("mongoose");
 
 const SensorData = require("../models/SensorData");
 const Settings = require("../models/Settings");
+const Alarm = require("../models/alarm"); // 新增 Alarm schema
 
 const { evaluateSensor } = require("../utils/sensorGrading");
 const { evaluateAndSaveAlarm } = require("../utils/alarmService");
-
-// FCM 推播
 const { sendAlarmPush } = require("../utils/fcmService");
-
-// FCM Token Collection
 const FcmToken = require("../models/fcmToken");
 
 // ----------------------------
-// 防呆：同一警報最少多久推播一次
+// 防重複推播設定
 // ----------------------------
 const PUSH_INTERVAL = 5 * 60 * 1000; // 5 分鐘
 
-/* MongoDB 連線確認 */
-mongoose.connection.on("connected", () => {
-  console.log("✔ MongoDB ready (ingest)");
-});
-
+// ----------------------------
+// 工具函式
+// ----------------------------
 function isValidNumber(value) {
   return value !== null && value !== undefined && value !== "" && !Number.isNaN(Number(value));
 }
@@ -44,7 +39,9 @@ function getPreferredValue(calibratedValue, rawValue) {
   return null;
 }
 
-/* ESP32 上傳感測器資料 */
+// ----------------------------
+// ESP32 上傳感測器資料
+// ----------------------------
 router.post("/sensor", async (req, res) => {
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({ error: "DB not ready" });
@@ -58,17 +55,12 @@ router.post("/sensor", async (req, res) => {
       time: new Date(now).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })
     };
 
-    // 取得最新設定
     const latestSettings = await Settings.findOne().sort({ time: -1 }).lean();
-
     const grading = evaluateSensor(baseData, latestSettings);
 
     const data = { ...baseData, grading };
     const savedData = await SensorData.create(data);
 
-    // ----------------------------
-    // 計算各項數值
-    // ----------------------------
     const averageTemperature = calculateAverage([baseData.T1, baseData.T2, baseData.T3]);
     const phValue = getPreferredValue(baseData.pH_value, baseData.pH);
     const doValue = getPreferredValue(baseData.DO_value, baseData.DO);
@@ -77,82 +69,66 @@ router.post("/sensor", async (req, res) => {
     const deviceId = baseData.device_id || "fish_Tank_001";
 
     // ----------------------------
-    // 判斷警報
+    // 判斷警報並防重複推播
     // ----------------------------
-    const alarmResults = await Promise.all([
-      evaluateAndSaveAlarm({
-        deviceId,
-        sensorType: "temperature",
-        sensorName: "魚缸溫度",
-        value: averageTemperature,
-        minValue: latestSettings?.temperature_min,
-        maxValue: latestSettings?.temperature_max,
-        unit: "°C"
-      }),
-      evaluateAndSaveAlarm({
-        deviceId,
-        sensorType: "ph",
-        sensorName: "pH",
-        value: phValue,
-        minValue: latestSettings?.ph_min,
-        maxValue: latestSettings?.ph_max,
-        unit: ""
-      }),
-      evaluateAndSaveAlarm({
-        deviceId,
-        sensorType: "do",
-        sensorName: "溶氧量",
-        value: doValue,
-        minValue: latestSettings?.do_min,
-        unit: " mg/L"
-      }),
-      evaluateAndSaveAlarm({
-        deviceId,
-        sensorType: "turbidity",
-        sensorName: "濁度",
-        value: turbidityValue,
-        minValue: latestSettings?.turb_max,
-        unit: ""
-      })
-    ]);
+    const alarmInputs = [
+      { sensorType: "temperature", sensorName: "魚缸溫度", value: averageTemperature, min: latestSettings?.temperature_min, max: latestSettings?.temperature_max, unit: "°C" },
+      { sensorType: "ph", sensorName: "pH", value: phValue, min: latestSettings?.ph_min, max: latestSettings?.ph_max, unit: "" },
+      { sensorType: "do", sensorName: "溶氧量", value: doValue, min: latestSettings?.do_min, max: null, unit: "mg/L" },
+      { sensorType: "turbidity", sensorName: "濁度", value: turbidityValue, min: latestSettings?.turb_max, max: null, unit: "" }
+    ];
 
-    console.log("✅ Sensor data inserted");
+    const alarmResults = [];
 
-    // ----------------------------
-    // FCM 推播：每個警報獨立，防呆處理
-    // ----------------------------
-    let tokens = await FcmToken.find({ active: true }).lean();
+    for (const alarmInput of alarmInputs) {
+      // 取得該感測器最後一次警報
+      let lastAlarm = await Alarm.findOne({ device_id: deviceId, sensor_type: alarmInput.sensorType }).sort({ createdAt: -1 });
 
-    // 如果 MongoDB 沒有 Token，暫時用 .env 測試 Token
-    if (tokens.length === 0 && process.env.TEST_FCM_TOKEN) {
-      tokens = [{ token: process.env.TEST_FCM_TOKEN }];
-    }
-
-    alarmResults.forEach((result) => {
-      if (!result.alarm) return; // 沒有警報就跳過
-      const nowTime = Date.now();
-
-      // 防呆：檢查 lastSentAt
-      if (result.alarm.lastSentAt && (nowTime - result.alarm.lastSentAt.getTime()) < PUSH_INTERVAL) {
-        console.log(`⏱ 忽略短時間重複推播: ${result.alarm.sensor_name}`);
-        return;
+      // 判斷是否要觸發警報
+      let triggered = false;
+      if (alarmInput.value !== null) {
+        if ((alarmInput.min !== undefined && alarmInput.value < alarmInput.min) ||
+            (alarmInput.max !== undefined && alarmInput.value > alarmInput.max)) {
+          triggered = true;
+        }
       }
 
-      // 更新 lastSentAt
-      result.alarm.lastSentAt = new Date();
+      // 如果警報狀態沒變且未到推播間隔，直接返回
+      if (lastAlarm && lastAlarm.active === triggered && lastAlarm.lastSentAt) {
+        const diff = Date.now() - lastAlarm.lastSentAt.getTime();
+        if (diff < PUSH_INTERVAL) {
+          alarmResults.push(lastAlarm);
+          continue; // 不重複推播
+        }
+      }
 
-      tokens.forEach((t) => {
-        sendAlarmPush(t.token, result.alarm)
-          .then((messageId) => console.log(`✅ FCM 推播成功: ${messageId} -> ${t.token}`))
-          .catch((err) => console.error(`❌ FCM 推播失敗 token=${t.token}`, err.message));
-      });
-    });
+      // 儲存或更新警報
+      const alarm = await Alarm.findOneAndUpdate(
+        { device_id: deviceId, sensor_type: alarmInput.sensorType },
+        {
+          value: alarmInput.value,
+          sensor_name: alarmInput.sensorName,
+          unit: alarmInput.unit,
+          active: triggered,
+          lastSentAt: triggered ? new Date() : lastAlarm?.lastSentAt || null
+        },
+        { upsert: true, new: true }
+      );
 
-    console.log("🚨 Alarm check:", alarmResults.map((result) => ({
-      action: result.action,
-      sensorType: result.sensorType || result.alarm?.sensor_type,
-      message: result.alarm?.message || result.reason || "",
-      modifiedCount: result.modifiedCount ?? 0
+      // 只有觸發警報才推播
+      if (triggered) {
+        const tokens = await FcmToken.find({ active: true });
+        tokens.forEach(t => sendAlarmPush(t.token, alarm));
+      }
+
+      alarmResults.push(alarm);
+    }
+
+    console.log("✅ Sensor data inserted");
+    console.log("🚨 Alarm check:", alarmResults.map(a => ({
+      sensorType: a.sensor_type,
+      active: a.active,
+      lastSentAt: a.lastSentAt
     })));
 
     return res.json({ ok: true, id: savedData._id, grading, alarmResults });
