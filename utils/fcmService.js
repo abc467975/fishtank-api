@@ -1,6 +1,6 @@
 // utils/fcmService.js
-
-const { messaging } = require("./firebaseAdmin");
+const path = require("path");
+const { messaging } = require(path.join(__dirname, "firebaseAdmin"));
 
 /**
  * 發送單一裝置測試通知
