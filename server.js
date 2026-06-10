@@ -29,6 +29,7 @@ app.get("/health", (req, res) => {
 });
 
 app.use(express.json());
+app.use("/api/fcm-token", require("./routes/fcmToken"));
 
 app.use("/api", require("./routes/calibrationapi"));
 app.use("/api", require("./routes/query"));
@@ -43,7 +44,7 @@ app.use("/api", require("./routes/settings"));
 // app.use("/api/control", verifyApiKey);
 app.use("/api", require("./routes/control"));
 app.use("/api", require("./routes/alarms"));
-app.use("/api/fcm-token", require("./routes/fcmToken"));
+
 
 
 /* =========================
