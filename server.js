@@ -40,6 +40,8 @@ app.use("/api", require("./routes/ingest"));
 app.use("/api/settings", verifyApiKey);
 app.use("/api", require("./routes/settings"));
 
+app.use("/api", require("./routes/notificationSettings"));
+
 // 如果你之後要鎖 control，再打開這行
 // app.use("/api/control", verifyApiKey);
 app.use("/api", require("./routes/control"));
