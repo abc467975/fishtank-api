@@ -8,6 +8,8 @@ const { messaging } = require(path.join(__dirname, "firebaseAdmin"));
 
 /**
  * 發送單一裝置測試通知
+ * 這個是測試用，可以保留 notification
+ * 如果你希望測試通知也完全交給 APP 控制，再改成 data-only
  * @param {string} token - FCM Token
  */
 async function sendTestPush(token) {
@@ -33,6 +35,7 @@ async function sendTestPush(token) {
 
 /**
  * 發送警報通知給單一裝置
+ * data-only，不放 notification
  * @param {string} token - FCM Token
  * @param {object} alarm - 警報資料物件
  */
@@ -52,12 +55,14 @@ async function sendAlarmPush(token, alarm) {
 
   const message = {
     token,
-    notification: {
-      title,
-      body
-    },
+
+    // 重點：警報推播不放 notification
+    // 讓 APP 收到 data 後自己決定要不要顯示通知、震動、靜音
     data: {
       type: "alarm",
+      title: String(title),
+      body: String(body),
+
       alarm_id: String(alarm._id ?? ""),
       device_id: String(alarm.device_id ?? ""),
       sensor_type: String(alarm.sensor_type ?? ""),
@@ -68,14 +73,11 @@ async function sendAlarmPush(token, alarm) {
       min_value: String(alarm.min_value ?? ""),
       max_value: String(alarm.max_value ?? ""),
       unit: String(alarm.unit ?? ""),
-      message: String(body ?? "")
+      message: String(body)
     },
+
     android: {
-      priority: "high",
-      notification: {
-        channelId: "alarm_channel",
-        sound: "default"
-      }
+      priority: "high"
     }
   };
 
@@ -84,6 +86,7 @@ async function sendAlarmPush(token, alarm) {
 
 /**
  * 發送警報通知給同一台魚缸底下所有有效裝置
+ * data-only，不放 notification
  * @param {string} device_id - 魚缸裝置 ID
  * @param {object} alarm - 警報資料物件
  */
@@ -135,12 +138,14 @@ async function sendAlarmPushToDevice(device_id, alarm) {
 
   const message = {
     tokens: tokenList,
-    notification: {
-      title,
-      body
-    },
+
+    // 重點：這裡不要放 notification
+    // Android 背景時才不會由系統直接跳通知
     data: {
       type: "alarm",
+      title: String(title),
+      body: String(body),
+
       alarm_id: String(alarm._id ?? ""),
       device_id: String(alarm.device_id ?? device_id),
       sensor_type: String(alarm.sensor_type ?? ""),
@@ -151,14 +156,11 @@ async function sendAlarmPushToDevice(device_id, alarm) {
       min_value: String(alarm.min_value ?? ""),
       max_value: String(alarm.max_value ?? ""),
       unit: String(alarm.unit ?? ""),
-      message: String(body ?? "")
+      message: String(body)
     },
+
     android: {
-      priority: "high",
-      notification: {
-        channelId: "alarm_channel",
-        sound: "default"
-      }
+      priority: "high"
     }
   };
 
