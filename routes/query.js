@@ -14,17 +14,24 @@ router.get("/sensor/latest", async (req, res) => {
       .sort({ timestamp: -1 })
       .lean();
 
-    const settings = await Settings
-      .findOne()
-      .sort({ time: -1 })
-      .lean();
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "目前沒有感測資料"
+      });
+    }
 
-    const evaluation = evaluateSensor(doc, settings);
-
-    res.json({ doc, evaluation });
+    return res.json({
+      success: true,
+      doc
+    });
   } catch (err) {
     console.error("❌ sensor/latest error:", err);
-    res.status(500).json({ error: "Server error" });
+
+    return res.status(500).json({
+      success: false,
+      error: "Server error"
+    });
   }
 });
 
