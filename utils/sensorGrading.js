@@ -645,21 +645,21 @@ function buildNotificationStates(
     /**
      * 溫度通知資料。
      */
-    {
+  {
   device_id,
 
   sensor_type: "waterLevel",
 
+  ...(
+    evaluation.waterLevel?.status ||
+    {}
+  ),
+
   /**
-   * 通用 value 欄位只存數字。
-   * 水位是狀態字串，所以這裡固定為 null。
+   * 最後覆蓋，保證 value 不會是 "LOW"。
    */
   value: null,
 
-  /**
-   * LOW / MID / HIGH / INVALID
-   * 存在專用的 state 欄位。
-   */
   state:
     evaluation.waterLevel?.state ??
     null,
@@ -670,12 +670,7 @@ function buildNotificationStates(
 
   WL2:
     evaluation.waterLevel?.WL2 ??
-    null,
-
-  ...(
-    evaluation.waterLevel?.status ||
-    {}
-  )
+    null
 },
 
     /**
