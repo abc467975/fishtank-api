@@ -258,28 +258,36 @@ async function handleAlarmNotification(
      * 使用 ?? 是為了相容舊資料：
      * 舊文件沒有這個欄位時，使用預設值 true。
      */
-    const severeNotificationEnabled =
-      settings
-        .severe_notification_enabled ??
-      DEFAULT_SETTINGS
-        .severe_notification_enabled;
+   /**
+ * App 的「只顯示嚴重通知」開關。
+ *
+ * true：
+ * 只允許 critical，warning 不推播。
+ *
+ * false：
+ * warning、critical 都依照原本規則推播。
+ */
+const severeOnlyEnabled =
+  settings.severe_notification_enabled ??
+  DEFAULT_SETTINGS.severe_notification_enabled;
 
-    if (
-      isSevere &&
-      !severeNotificationEnabled
-    ) {
-      console.log(
-        `[嚴重通知已關閉] ${device_id}:${sensorKey}:${alarm_type}`
-      );
+/**
+ * 開啟「只顯示嚴重通知」時，
+ * 一般 warning 不進入延遲、冷卻與 FCM 流程。
+ */
+if (severeOnlyEnabled && !isSevere) {
+  console.log(
+    `[一般通知已過濾] ${device_id}:${sensorKey}:${alarm_type}:${severity}`
+  );
 
-      return {
-        sent: false,
-        reason:
-          "SEVERE_NOTIFICATION_DISABLED",
-        severity,
-        is_severe: true
-      };
-    }
+  return {
+    sent: false,
+    reason: "NON_SEVERE_NOTIFICATION_FILTERED",
+    severity,
+    is_severe: false,
+    severe_only_enabled: true
+  };
+}
 
     /**
      * 取得該感測器的通知設定。
