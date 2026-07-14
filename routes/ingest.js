@@ -18,57 +18,21 @@ const {
 } = require("../utils/notificationManager");
 
 function isValidNumber(value) {
-  return value !== null && value !== undefined && !Number.isNaN(Number(value));
+  return (
+    value !== null &&
+    value !== undefined &&
+    value !== "" &&
+    Number.isFinite(Number(value))
+  );
 }
 
 function safeNumber(value) {
-  return isValidNumber(value) ? Number(value) : null;
+  return isValidNumber(value)
+    ? Number(value)
+    : null;
 }
 
-function calculateAverage(values) {
-  const valid = values.filter(isValidNumber).map(Number);
 
-  if (!valid.length) return null;
-
-  return valid.reduce((sum, v) => sum + v, 0) / valid.length;
-}
-
-function getPreferredValue(calibrated, raw) {
-  if (isValidNumber(calibrated)) return Number(calibrated);
-  if (isValidNumber(raw)) return Number(raw);
-  return null;
-}
-
-function getAlarmType(value, min, max) {
-  if (isValidNumber(max) && value > Number(max)) return "high";
-  if (isValidNumber(min) && value < Number(min)) return "low";
-  return "normal";
-}
-
-function getSeverity(sensorType, alarmType) {
-  if (alarmType === "normal") return "normal";
-
-  // 這裡先給基本規則
-  // 之後如果你要分 warning / critical，可以再加更細的判斷
-  if (sensorType === "temperature") return "warning";
-  if (sensorType === "ph") return "warning";
-  if (sensorType === "do") return "warning";
-  if (sensorType === "turbidity") return "warning";
-
-  return "warning";
-}
-
-function buildAlarmMessage(sensorName, alarmType, value, unit) {
-  if (alarmType === "high") {
-    return `${sensorName}過高，目前數值 ${value}${unit || ""}`;
-  }
-
-  if (alarmType === "low") {
-    return `${sensorName}過低，目前數值 ${value}${unit || ""}`;
-  }
-
-  return `${sensorName}恢復正常，目前數值 ${value}${unit || ""}`;
-}
 
 // ----------------------------
 // ESP32 上傳感測器資料
@@ -132,102 +96,222 @@ router.post("/sensor", async (req, res) => {
 
     const savedData = await SensorData.create(data);
 
+        // ----------------------------
+    // 使用 sensorGrading 的統一分級結果
     // ----------------------------
-    // 計算各項警報數值
-    // ----------------------------
-    const averageTemperature = calculateAverage([
-      safeData.T1,
-      safeData.T2,
-      safeData.T3
-    ]);
 
-    const phValue = getPreferredValue(safeData.pH_value, safeData.pH);
-    const doValue = getPreferredValue(safeData.DO_value, safeData.DO);
-    const turbidityValue = safeNumber(safeData.Turb);
-
-    const sensors = [
-      {
-        sensorType: "temperature",
+    const sensorMeta = {
+      temperature: {
         sensorName: "魚缸溫度",
-        value: averageTemperature,
-        min: latestSettings?.temperature_min,
-        max: latestSettings?.temperature_max,
-        unit: "°C"
+        unit: "°C",
+        min: grading.limits.temperature_min,
+        max: grading.limits.temperature_max
       },
-      {
-        sensorType: "ph",
+
+      pH: {
         sensorName: "pH",
-        value: phValue,
-        min: latestSettings?.ph_min,
-        max: latestSettings?.ph_max,
-        unit: ""
+        unit: "",
+        min: grading.limits.ph_min,
+        max: grading.limits.ph_max
       },
-      {
-        sensorType: "do",
+
+      dissolvedOxygen: {
         sensorName: "溶氧量",
-        value: doValue,
-        min: latestSettings?.do_min,
-        max: null,
-        unit: "mg/L"
+        unit: "mg/L",
+        min: grading.limits.do_min,
+        max: null
       },
-      {
-        sensorType: "turbidity",
-        sensorName: "濁度感測值",
-        value: turbidityValue,
-        min: latestSettings?.turb_min ?? latestSettings?.turbidity_min ?? latestSettings?.turb_max,
-       max: null,
-       unit: ""
+
+      turbidity: {
+        sensorName: "濁度",
+        unit: "",
+        min: null,
+        max: null
+      },
+
+      waterLevel: {
+        sensorName: "魚缸水位",
+        unit: "",
+        min: null,
+        max: null
       }
-    ];
+    };
 
     const alarmResults = [];
 
-    for (const s of sensors) {
-      if (s.value === null) continue;
+    for (const state of grading.notification_states) {
+      const meta = sensorMeta[state.sensor_type];
 
-      const alarmKey = `${deviceId}:${s.sensorType}`;
+      if (!meta) {
+        alarmResults.push({
+          sensor_type: state.sensor_type,
+          notification: {
+            sent: false,
+            reason: "NO_SENSOR_META"
+          }
+        });
+
+        continue;
+      }
+
+      /**
+       * UNKNOWN 代表感測器無資料。
+       *
+       * 不發送通知，也不把舊警報改成恢復正常，
+       * 避免感測器斷線時錯誤清除警報狀態。
+       */
+      if (state.severity === "unknown") {
+        alarmResults.push({
+          sensor_type: state.sensor_type,
+          severity: state.severity,
+          notification: {
+            sent: false,
+            reason: "UNKNOWN_SENSOR_DATA"
+          }
+        });
+
+        continue;
+      }
+
+      const alarmKey =
+        `${deviceId}:${state.sensor_type}`;
 
       const lastAlarm = await Alarm.findOne({
         alarm_key: alarmKey
       }).lean();
 
-      const alarmType = getAlarmType(s.value, s.min, s.max);
-      const triggered = alarmType !== "normal";
+      const triggered =
+  state.is_abnormal === true;
 
-      const severity = getSeverity(s.sensorType, alarmType);
+/**
+ * 警報方向改變：
+ * 例如 high → low
+ */
+const alarmTypeChanged =
+  Boolean(
+    lastAlarm?.active &&
+    lastAlarm.alarm_type &&
+    lastAlarm.alarm_type !== state.alarm_type
+  );
 
-      const message = buildAlarmMessage(
-        s.sensorName,
-        alarmType,
-        s.value,
-        s.unit
-      );
+/**
+ * 嚴重程度改變：
+ * 例如 warning → critical
+ */
+const severityChanged =
+  Boolean(
+    lastAlarm?.active &&
+    lastAlarm.severity &&
+    lastAlarm.severity !== state.severity
+  );
+
+/**
+ * 警報方向或嚴重程度改變時，
+ * 清除上一個通知的等待及冷卻狀態。
+ */
+if (alarmTypeChanged || severityChanged) {
+  clearAlarmNotification(
+    deviceId,
+    state.sensor_type,
+    lastAlarm.alarm_type
+  );
+
+  console.log(
+    `[警報狀態改變] ${state.sensor_type}`,
+    {
+      previous_alarm_type:
+        lastAlarm.alarm_type,
+
+      current_alarm_type:
+        state.alarm_type,
+
+      previous_severity:
+        lastAlarm.severity,
+
+      current_severity:
+        state.severity
+    }
+  );
+}
+
+let message;
+
+/**
+ * 水位使用 WL1、WL2 顯示，
+ * 不使用一般感測器的 valueText。
+ */
+if (state.sensor_type === "waterLevel") {
+  message = triggered
+    ? `${meta.sensorName}異常：${state.label}，WL1=${state.WL1}，WL2=${state.WL2}`
+    : `${meta.sensorName}恢復正常：${state.label}，WL1=${state.WL1}，WL2=${state.WL2}`;
+} else {
+  const valueText =
+    state.value !== null &&
+    state.value !== undefined
+      ? `${state.value}${meta.unit}`
+      : "無資料";
+
+  message = triggered
+    ? `${meta.sensorName}異常：${state.label}，目前數值 ${valueText}`
+    : `${meta.sensorName}恢復正常，目前數值 ${valueText}`;
+}
+
+const nowDate = new Date();
+
+/**
+ * 只有警報方向和嚴重程度都沒改變，
+ * 才保留第一次偵測時間。
+ *
+ * warning 升級 critical 時，要重新開始記錄。
+ */
+const shouldKeepFirstDetectedAt =
+  triggered &&
+  lastAlarm?.active &&
+  lastAlarm.alarm_type === state.alarm_type &&
+  lastAlarm.severity === state.severity;
 
       const updateData = {
         alarm_key: alarmKey,
         device_id: deviceId,
 
-        sensor_type: s.sensorType,
-        sensor_name: s.sensorName,
+        sensor_type: state.sensor_type,
+        sensor_name: meta.sensorName,
 
-        value: s.value,
-        min_value: isValidNumber(s.min) ? Number(s.min) : null,
-        max_value: isValidNumber(s.max) ? Number(s.max) : null,
-        unit: s.unit,
+        value: state.value,
+
+        min_value: isValidNumber(meta.min)
+          ? Number(meta.min)
+          : null,
+
+        max_value: isValidNumber(meta.max)
+          ? Number(meta.max)
+          : null,
+
+        unit: meta.unit,
 
         active: triggered,
-        alarm_type: alarmType,
-        severity,
+
+        /**
+         * 直接使用 sensorGrading 的結果，
+         * 不再重新判斷。
+         */
+        alarm_type: state.alarm_type,
+        severity: state.severity,
+
         message,
 
-        status: triggered ? "active" : "resolved",
+        status: triggered
+          ? "active"
+          : "resolved",
 
         first_detected_at:
-          triggered && !lastAlarm?.active
-            ? new Date()
-            : lastAlarm?.first_detected_at || new Date(),
+          shouldKeepFirstDetectedAt
+            ? lastAlarm.first_detected_at || nowDate
+            : triggered
+              ? nowDate
+              : lastAlarm?.first_detected_at || nowDate,
 
-        last_detected_at: new Date()
+        last_detected_at: nowDate
       };
 
       const alarm = await Alarm.findOneAndUpdate(
@@ -239,15 +323,39 @@ router.post("/sensor", async (req, res) => {
         },
         {
           upsert: true,
-          new: true
+          new: true,
+          runValidators: true
         }
       );
 
       if (triggered) {
-        // 新版：交給 NotificationSettings 判斷是否要推播
-        const notifyResult = await handleAlarmNotification(alarm);
+        /**
+         * YELLOW、ORANGE、RED 都交給通知管理器。
+         *
+         * notificationManager 再負責：
+         * 1. 總通知開關
+         * 2. 單一感測器通知開關
+         * 3. delay_seconds
+         * 4. cooldown_seconds
+         * 5. 嚴重通知開關
+         */
+        const notifyResult =
+          await handleAlarmNotification({
+            ...alarm.toObject(),
 
-        // 如果真的有送出 FCM，再記錄 lastSentAt
+            /**
+             * 明確帶入統一分級結果。
+             */
+            grade: state.grade,
+            severity: state.severity,
+            is_severe: state.is_severe,
+            is_abnormal: state.is_abnormal,
+            label: state.label
+          });
+
+        /**
+         * 真的成功送出 FCM 才更新發送時間。
+         */
         if (notifyResult?.sent) {
           alarm.lastSentAt = new Date();
           await alarm.save();
@@ -258,14 +366,23 @@ router.post("/sensor", async (req, res) => {
           notification: notifyResult
         });
       } else {
-        // 感測器恢復正常時，清除通知延遲計時
-        clearAlarmNotification(deviceId, s.sensorType);
+        /**
+         * GREEN：感測器恢復正常。
+         *
+         * 清除這個感測器所有警報類型的
+         * delay 與 cooldown 記憶體狀態。
+         */
+        clearAlarmNotification(
+          deviceId,
+          state.sensor_type
+        );
 
         alarmResults.push({
           alarm,
           notification: {
             sent: false,
-            reason: "SENSOR_NORMAL_CLEAR_NOTIFICATION_STATE"
+            reason:
+              "SENSOR_NORMAL_CLEAR_NOTIFICATION_STATE"
           }
         });
       }
