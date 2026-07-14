@@ -16,20 +16,28 @@ router.get("/sensor/latest", async (req, res) => {
 
     if (!doc) {
       return res.status(404).json({
-        success: false,
-        message: "目前沒有感測資料"
+        error: "目前沒有感測資料"
       });
     }
 
+    /**
+     * 不重新 evaluateSensor，
+     * 直接使用儲存好的 grading。
+     *
+     * 同時保留 doc、evaluation，
+     * 避免 App 原本使用其中一個欄位時壞掉。
+     */
     return res.json({
-      success: true,
-      doc
+      doc,
+      evaluation: doc.grading || null
     });
   } catch (err) {
-    console.error("❌ sensor/latest error:", err);
+    console.error(
+      "❌ sensor/latest error:",
+      err
+    );
 
     return res.status(500).json({
-      success: false,
       error: "Server error"
     });
   }

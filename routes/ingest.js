@@ -64,6 +64,14 @@ router.post("/sensor", async (req, res) => {
 
     const grading = evaluateSensor(baseData, latestSettings);
 
+    const notificationStates =
+      grading.notification_states || [];
+
+      const gradingForStorage = {
+  ...grading
+};
+
+delete gradingForStorage.notification_states;
     // ----------------------------
     // 插入 SensorData
     // ----------------------------
@@ -90,10 +98,9 @@ router.post("/sensor", async (req, res) => {
     };
 
     const data = {
-      ...safeData,
-      grading
-    };
-
+  ...safeData,
+  grading: gradingForStorage
+};
     const savedData = await SensorData.create(data);
 
         // ----------------------------
@@ -139,7 +146,7 @@ router.post("/sensor", async (req, res) => {
 
     const alarmResults = [];
 
-    for (const state of grading.notification_states) {
+     for (const state of notificationStates ) {
       const meta = sensorMeta[state.sensor_type];
 
       if (!meta) {
@@ -419,11 +426,14 @@ resolved_at: triggered
     console.log("✅ Sensor data inserted");
 
     return res.json({
-      ok: true,
-      id: savedData._id,
-      grading,
-      alarmResults
-    });
+  ok: true,
+  id: savedData._id,
+
+  // 回傳相容舊 App 的格式
+  grading: gradingForStorage,
+
+  alarmResults
+});
 
   } catch (err) {
     console.error("❌ insert fail", err);

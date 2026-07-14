@@ -646,99 +646,52 @@ function buildNotificationStates(
   }
 
   return [
-    /**
-     * 1. 溫度
-     */
     {
       device_id,
-
       sensor_type: "temperature",
+      value: evaluation.temperature?.avg ?? null,
 
-      value:
-        evaluation.temperature?.avg ??
-        null,
-
-      ...(
-        evaluation.temperature?.status ||
-        {}
-      )
+      // 直接使用原本 grade
+      ...(evaluation.temperature?.grade || {})
     },
 
-    /**
-     * 2. pH
-     */
     {
       device_id,
-
       sensor_type: "pH",
+      value: evaluation.pH?.value ?? null,
 
-      value:
-        evaluation.pH?.value ??
-        null,
-
-      ...(
-        evaluation.pH?.status ||
-        {}
-      )
+      ...(evaluation.pH?.grade || {})
     },
 
-    /**
-     * 3. 溶氧
-     */
     {
       device_id,
-
       sensor_type: "dissolvedOxygen",
+      value: evaluation.DO?.value ?? null,
 
-      value:
-        evaluation.DO?.value ??
-        null,
-
-      ...(
-        evaluation.DO?.status ||
-        {}
-      )
+      ...(evaluation.DO?.grade || {})
     },
 
-    /**
-     * 4. 濁度
-     */
     {
       device_id,
-
       sensor_type: "turbidity",
+      value: evaluation.turbidity?.raw ?? null,
 
-      value:
-        evaluation.turbidity?.raw ??
-        null,
-
-      ...(
-        evaluation.turbidity?.status ||
-        {}
-      )
+      ...(evaluation.turbidity?.grade || {})
     },
 
-    /**
-     * 5. 水位
-     *
-     * status 要先展開，
-     * value: null 放在後面強制覆蓋，
-     * 避免 value 再變成 "LOW"。
-     */
     {
       device_id,
-
       sensor_type: "waterLevel",
 
-      ...(
-        evaluation.waterLevel?.status ||
-        {}
-      ),
+      // 水位原本的欄位全部保留
+      ...(evaluation.waterLevel || {}),
 
+      // Alarm.value 只允許數字
       value: null,
 
       state:
         evaluation.waterLevel?.state ??
+        evaluation.waterLevel?.level ??
         null,
 
       WL1:
@@ -863,88 +816,44 @@ function evaluateSensor(
      ----------------------------- */
 
   const evaluation = {
-    limits,
+  limits,
 
-    pH: {
-      /**
-       * 保留 Arduino 原始 ADC。
-       */
-      raw: doc.pH,
+  pH: {
+    raw: doc.pH,
+    value: phValue,
+    grade: phGrade
+  },
 
-      /**
-       * Arduino 換算後的 pH。
-       */
-      value: phValue,
+  DO: {
+    raw: doc.DO,
+    value: doValue,
+    grade: doGrade
+  },
 
-      /**
-       * 保留原本 grade 格式，
-       * 避免目前 App 或 API 壞掉。
-       */
-      grade: phGrade,
+  turbidity: {
+    raw: doc.Turb,
+    grade: turbGrade
+  },
 
-      /**
-       * 統一提供給通知系統使用。
-       */
-      status: phGrade
-    },
+  temperature: {
+    avg: avgTemp,
+    grade: temperatureGrade
+  },
 
-    DO: {
-      /**
-       * 保留 Arduino 原始 ADC。
-       */
-      raw: doc.DO,
+  waterLevel: {
+    WL1: doc.WL1,
+    WL2: doc.WL2,
+    ...waterLevel
+  }
+};
 
-      /**
-       * Arduino 換算後的 mg/L。
-       */
-      value: doValue,
+evaluation.notification_states =
+  buildNotificationStates(
+    evaluation,
+    doc.device_id || DEFAULT_DEVICE_ID
+  );
 
-      grade: doGrade,
-      status: doGrade
-    },
-
-    turbidity: {
-      raw: doc.Turb,
-
-      grade: turbGrade,
-      status: turbGrade
-    },
-
-    temperature: {
-      avg: avgTemp,
-
-      grade: temperatureGrade,
-      status: temperatureGrade
-    },
-
-    waterLevel: {
-      WL1: doc.WL1,
-      WL2: doc.WL2,
-
-      /**
-       * 保留舊有直接展開的欄位：
-       * level、grade、label、state 等。
-       */
-      ...waterLevel,
-
-      /**
-       * 統一提供給通知系統使用。
-       */
-      status: waterLevel
-    }
-  };
-
-  /**
-   * 產生 notificationManager 可以直接使用的陣列。
-   */
-  evaluation.notification_states =
-    buildNotificationStates(
-      evaluation,
-      doc.device_id ||
-        DEFAULT_DEVICE_ID
-    );
-
-  return evaluation;
+return evaluation;
 }
 
 /* =====================================================
