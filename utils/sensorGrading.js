@@ -633,6 +633,10 @@ function gradeWaterLevel(WL1, WL2) {
    notificationManager 可共用的格式。
    ===================================================== */
 
+/**
+ * 將各感測器分級結果，
+ * 轉成 notificationManager 共用格式。
+ */
 function buildNotificationStates(
   evaluation,
   device_id = DEFAULT_DEVICE_ID
@@ -643,38 +647,25 @@ function buildNotificationStates(
 
   return [
     /**
-     * 溫度通知資料。
+     * 1. 溫度
      */
-  {
-  device_id,
+    {
+      device_id,
 
-  sensor_type: "waterLevel",
+      sensor_type: "temperature",
 
-  ...(
-    evaluation.waterLevel?.status ||
-    {}
-  ),
+      value:
+        evaluation.temperature?.avg ??
+        null,
 
-  /**
-   * 最後覆蓋，保證 value 不會是 "LOW"。
-   */
-  value: null,
-
-  state:
-    evaluation.waterLevel?.state ??
-    null,
-
-  WL1:
-    evaluation.waterLevel?.WL1 ??
-    null,
-
-  WL2:
-    evaluation.waterLevel?.WL2 ??
-    null
-},
+      ...(
+        evaluation.temperature?.status ||
+        {}
+      )
+    },
 
     /**
-     * pH 通知資料。
+     * 2. pH
      */
     {
       device_id,
@@ -692,13 +683,12 @@ function buildNotificationStates(
     },
 
     /**
-     * 溶氧通知資料。
+     * 3. 溶氧
      */
     {
       device_id,
 
-      sensor_type:
-        "dissolvedOxygen",
+      sensor_type: "dissolvedOxygen",
 
       value:
         evaluation.DO?.value ??
@@ -711,7 +701,7 @@ function buildNotificationStates(
     },
 
     /**
-     * 濁度通知資料。
+     * 4. 濁度
      */
     {
       device_id,
@@ -729,14 +719,25 @@ function buildNotificationStates(
     },
 
     /**
-     * 水位通知資料。
+     * 5. 水位
+     *
+     * status 要先展開，
+     * value: null 放在後面強制覆蓋，
+     * 避免 value 再變成 "LOW"。
      */
     {
       device_id,
 
       sensor_type: "waterLevel",
 
-      value:
+      ...(
+        evaluation.waterLevel?.status ||
+        {}
+      ),
+
+      value: null,
+
+      state:
         evaluation.waterLevel?.state ??
         null,
 
@@ -746,12 +747,7 @@ function buildNotificationStates(
 
       WL2:
         evaluation.waterLevel?.WL2 ??
-        null,
-
-      ...(
-        evaluation.waterLevel?.status ||
-        {}
-      )
+        null
     }
   ];
 }
