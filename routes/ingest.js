@@ -271,48 +271,76 @@ const shouldKeepFirstDetectedAt =
   lastAlarm.severity === state.severity;
 
       const updateData = {
-        alarm_key: alarmKey,
-        device_id: deviceId,
+  alarm_key: alarmKey,
+  device_id: deviceId,
 
-        sensor_type: state.sensor_type,
-        sensor_name: meta.sensorName,
+  sensor_type: state.sensor_type,
+  sensor_name: meta.sensorName,
 
-        value: state.value,
+  value:
+    state.sensor_type === "waterLevel"
+      ? null
+      : state.value,
 
-        min_value: isValidNumber(meta.min)
-          ? Number(meta.min)
-          : null,
+  state:
+    state.sensor_type === "waterLevel"
+      ? state.state || null
+      : null,
 
-        max_value: isValidNumber(meta.max)
-          ? Number(meta.max)
-          : null,
+  WL1:
+    state.sensor_type === "waterLevel" &&
+    isValidNumber(state.WL1)
+      ? Number(state.WL1)
+      : null,
 
-        unit: meta.unit,
+  WL2:
+    state.sensor_type === "waterLevel" &&
+    isValidNumber(state.WL2)
+      ? Number(state.WL2)
+      : null,
 
-        active: triggered,
+  min_value: isValidNumber(meta.min)
+    ? Number(meta.min)
+    : null,
 
-        /**
-         * 直接使用 sensorGrading 的結果，
-         * 不再重新判斷。
-         */
-        alarm_type: state.alarm_type,
-        severity: state.severity,
+  max_value: isValidNumber(meta.max)
+    ? Number(meta.max)
+    : null,
 
-        message,
+  unit: meta.unit,
 
-        status: triggered
-          ? "active"
-          : "resolved",
+  active: triggered,
 
-        first_detected_at:
-          shouldKeepFirstDetectedAt
-            ? lastAlarm.first_detected_at || nowDate
-            : triggered
-              ? nowDate
-              : lastAlarm?.first_detected_at || nowDate,
+  alarm_type: state.alarm_type,
+  severity: state.severity,
+  grade: state.grade,
+  label: state.label,
 
-        last_detected_at: nowDate
-      };
+  message,
+
+  status: triggered
+    ? "active"
+    : "resolved",
+
+  first_detected_at:
+    shouldKeepFirstDetectedAt
+      ? lastAlarm.first_detected_at || nowDate
+      : triggered
+        ? nowDate
+        : lastAlarm?.first_detected_at || nowDate,
+
+  last_detected_at: nowDate,
+
+/**
+ * 只有從異常恢復正常時，
+ * 才記錄 resolved_at。
+ */
+resolved_at: triggered
+  ? null
+  : lastAlarm?.active
+    ? nowDate
+    : lastAlarm?.resolved_at ?? null
+};
 
       const alarm = await Alarm.findOneAndUpdate(
         {
