@@ -30,6 +30,12 @@ const NotificationSettingsSchema = new mongoose.Schema({
     default: true
   },
 
+    // 嚴重通知開關
+  severe_notification_enabled: {
+    type: Boolean,
+    default: true
+  },
+
   // 同一類警報發送後，多久內不要重複通知
   cooldown_seconds: {
     type: Number,
