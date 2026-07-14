@@ -66,17 +66,25 @@ function normalizeSettings(body = {}, existing = {}) {
   ).trim();
 
   const normalized = {
-    device_id,
-    enabled: toBoolean(
-      body.enabled,
-      existing.enabled ?? true
-    ),
-    cooldown_seconds: toSeconds(
-      body.cooldown_seconds,
-      existing.cooldown_seconds ?? 300
-    ),
-    updated_at: new Date()
-  };
+  device_id,
+
+  enabled: toBoolean(
+    body.enabled,
+    existing.enabled ?? true
+  ),
+
+  severe_notification_enabled: toBoolean(
+    body.severe_notification_enabled,
+    existing.severe_notification_enabled ?? true
+  ),
+
+  cooldown_seconds: toSeconds(
+    body.cooldown_seconds,
+    existing.cooldown_seconds ?? 300
+  ),
+
+  updated_at: new Date()
+};
 
   for (const key of SENSOR_KEYS) {
     const inputSensor = body[key] || {};
