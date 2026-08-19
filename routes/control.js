@@ -14,27 +14,27 @@ const { publishJson, topicControl } = require("../utils/mqttClient");
 let latestControlCache = null;
 
 
+
+
 /* =========================
    GET 目前控制狀態
    ========================= */
 router.get("/control", async (req, res) => {
   try {
-    // 1. 如果 Node 記憶體內已經有最新控制資料，直接回傳
-    if (latestControlCache) {
-      return res.json(latestControlCache);
-    }
 
-    // 2. 如果記憶體沒有，就從 MongoDB 抓最新狀態
+    // ⭐ 每次都從 MongoDB 取得真正最新狀態
     const state = await ControlState.findOne()
       .sort({ updatedAt: -1 })
       .lean();
 
     if (state) {
+      // 同步快取
       latestControlCache = state;
+
       return res.json(state);
     }
 
-    // 3. 如果資料庫也沒有資料，就回傳一份預設控制狀態
+    // 資料庫完全沒有資料時才使用預設值
     const defaultState = {
       mode: false,
 
@@ -46,14 +46,11 @@ router.get("/control", async (req, res) => {
 
       aerator: false,
 
-      // 新增控制項
-      heating: false,       // 魚缸加熱棒
-      heating2: false,     // 新水桶加熱棒
-      filter: false,           // 過濾器
-      led: false,              // LED燈
+      heating: false,
+      heating2: false,
 
-      // 舊欄位，暫時保留
-      
+      filter: false,
+      led: false,
 
       peristaltic1_pwm: 0,
       peristaltic2_pwm: 0,
@@ -70,11 +67,19 @@ router.get("/control", async (req, res) => {
     };
 
     latestControlCache = defaultState;
+
     return res.json(defaultState);
 
   } catch (err) {
-    console.error("GET /control error:", err);
-    res.status(500).json({ error: err.message });
+
+    console.error(
+      "GET /control error:",
+      err
+    );
+
+    res.status(500).json({
+      error: err.message
+    });
   }
 });
 
