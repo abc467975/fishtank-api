@@ -1,12 +1,13 @@
 // models/Alarm.js
 
 const mongoose = require("mongoose");
+const { DEVICE_ID } = require("../utils/deviceConfig");
 
 const AlarmSchema = new mongoose.Schema(
   {
     device_id: {
       type: String,
-      default: "fish_Tank_001",
+      default: DEVICE_ID,
       index: true,
       trim: true
     },

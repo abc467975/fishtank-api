@@ -4,8 +4,7 @@ const express = require("express");
 const router = express.Router();
 
 const NotificationSettings = require("../models/notificationSettings");
-
-const DEFAULT_DEVICE_ID = "fish_Tank_001";
+const { DEVICE_ID: DEFAULT_DEVICE_ID, resolveDeviceId } = require("../utils/deviceConfig");
 
 const DEFAULT_SENSOR_SETTINGS = {
   temperature: {
@@ -59,11 +58,9 @@ function toSeconds(value, fallback, min = 0, max = 86400) {
 }
 
 function normalizeSettings(body = {}, existing = {}) {
-  const device_id = String(
-    body.device_id ||
-    existing.device_id ||
-    DEFAULT_DEVICE_ID
-  ).trim();
+  const device_id = resolveDeviceId(
+    body.device_id || existing.device_id || DEFAULT_DEVICE_ID
+  );
 
   const normalized = {
   device_id,
@@ -142,7 +139,7 @@ router.get("/notification-settings", async (req, res) => {
  */
 router.get("/notification-settings/:device_id", async (req, res) => {
   try {
-    const device_id = String(req.params.device_id || DEFAULT_DEVICE_ID).trim();
+    const device_id = resolveDeviceId(req.params.device_id);
 
     let settings = await NotificationSettings.findOne({ device_id });
 
@@ -172,9 +169,7 @@ router.get("/notification-settings/:device_id", async (req, res) => {
  */
 router.post("/notification-settings", async (req, res) => {
   try {
-    const device_id = String(
-      req.body.device_id || DEFAULT_DEVICE_ID
-    ).trim();
+    const device_id = resolveDeviceId(req.body.device_id);
 
     const existing = await NotificationSettings
       .findOne({ device_id })

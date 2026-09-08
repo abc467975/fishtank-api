@@ -1,9 +1,11 @@
 // models/SensorData.js
 
 const mongoose = require("mongoose");
+const { DEVICE_ID } = require("../utils/deviceConfig");
 
 const SensorDataSchema = new mongoose.Schema(
   {
+    device_id: { type: String, default: DEVICE_ID, index: true },
     timestamp: {
       type: Number,
       required: true
@@ -49,6 +51,8 @@ const SensorDataSchema = new mongoose.Schema(
     versionKey: false
   }
 );
+
+SensorDataSchema.index({ device_id: 1, timestamp: -1 });
 
 module.exports = mongoose.model(
   "SensorData",

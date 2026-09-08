@@ -10,7 +10,7 @@ const {
 const MQTT_URL = process.env.MQTT_URL;
 const MQTT_USERNAME = process.env.MQTT_USERNAME;
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD;
-const MQTT_DEVICE_ID = process.env.MQTT_DEVICE_ID || "default_device";
+const { DEVICE_ID } = require("./deviceConfig");
 
 let client = null;
 
@@ -28,7 +28,7 @@ if (!MQTT_URL) {
 
   client.on("connect", () => {
   console.log("✅ MQTT connected");
-  console.log("MQTT_DEVICE_ID:", MQTT_DEVICE_ID);
+  console.log("FISHTANK_DEVICE_ID:", DEVICE_ID);
 
   const statusTopic = topicStatus();
 
@@ -220,7 +220,7 @@ if (!MQTT_URL) {
 
         device_id:
           data.device_id ||
-          MQTT_DEVICE_ID,
+          DEVICE_ID,
 
         mode: false,
 
@@ -288,7 +288,7 @@ if (!MQTT_URL) {
 
         device_id:
           data.device_id ||
-          MQTT_DEVICE_ID,
+          DEVICE_ID,
 
         mode: true,
 
@@ -375,19 +375,19 @@ function publishJson(topic, data, options = {}) {
 
 
 function topicControl() {
-  return `fish/control/${MQTT_DEVICE_ID}`;
+  return `fish/control/${DEVICE_ID}`;
 }
 
 function topicSettings() {
-  return `fish/settings/${MQTT_DEVICE_ID}`;
+  return `fish/settings/${DEVICE_ID}`;
 }
 
 function topicCalibration() {
-  return `fish/calibration/${MQTT_DEVICE_ID}`;
+  return `fish/calibration/${DEVICE_ID}`;
 }
 
 function topicStatus() {
-  return `fish/status/${MQTT_DEVICE_ID}`;
+  return `fish/status/${DEVICE_ID}`;
 }
 
 module.exports = {

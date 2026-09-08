@@ -1,6 +1,7 @@
 // models/notificationSettings.js
 
 const mongoose = require("mongoose");
+const { DEVICE_ID } = require("../utils/deviceConfig");
 
 const SensorNotifySchema = new mongoose.Schema({
   enabled: {
@@ -21,7 +22,7 @@ const NotificationSettingsSchema = new mongoose.Schema({
     required: true,
     unique: true,
     trim: true,
-    default: "fish_Tank_001"
+    default: DEVICE_ID
   },
 
   // 總開關：false 時全部不推播

@@ -9,8 +9,11 @@ const mongoose = require("mongoose");
 const SensorData = require("../models/SensorData");
 const Settings = require("../models/Settings");
 const Alarm = require("../models/Alarm");
+const AlarmEvent = require("../models/AlarmEvent");
+const { broadcastAlarm } = require("../utils/wsHub");
 
 const { evaluateSensor } = require("../utils/sensorGrading");
+const { resolveDeviceId } = require("../utils/deviceConfig");
 
 const {
   handleAlarmNotification,
@@ -47,7 +50,7 @@ router.post("/sensor", async (req, res) => {
   try {
     const now = Date.now();
 
-    const deviceId = req.body.device_id || "fish_Tank_001";
+    const deviceId = resolveDeviceId(req.body.device_id);
 
     const baseData = {
       ...req.body,
@@ -363,6 +366,22 @@ resolved_at: triggered
         }
       );
 
+      const eventType = triggered
+        ? (!lastAlarm?.active ? "created" : (alarmTypeChanged || severityChanged ? "updated" : null))
+        : (lastAlarm?.active ? "resolved" : null);
+
+      if (eventType) {
+        const payload = alarm.toObject();
+        await AlarmEvent.create({
+          alarm_id: alarm._id,
+          device_id: deviceId,
+          event_type: eventType,
+          event_at: nowDate,
+          payload
+        });
+        broadcastAlarm(eventType, payload);
+      }
+
       if (triggered) {
         /**
          * YELLOW、ORANGE、RED 都交給通知管理器。
@@ -438,7 +457,7 @@ resolved_at: triggered
   } catch (err) {
     console.error("❌ insert fail", err);
 
-    return res.status(500).json({
+    return res.status(err.statusCode || 500).json({
       error: "insert fail",
       message: err.message
     });

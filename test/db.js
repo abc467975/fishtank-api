@@ -1,7 +1,10 @@
 const mongoose = require("mongoose");
 
-const MONGO_URI =
-  "mongodb+srv://abc467975:aA46797521@cluster0.7oj9nmn.mongodb.net/fish";
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  throw new Error("MONGODB_URI (or MONGO_URI) must be set for database tests");
+}
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))

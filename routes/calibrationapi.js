@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 
 const { broadcastCalibration, getClientCount } = require("../utils/wsHub");
 const { publishJson, topicCalibration } = require("../utils/mqttClient");
+const { DEVICE_ID, resolveDeviceId } = require("../utils/deviceConfig");
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ const calibrationSchema = new mongoose.Schema(
   {
     device_id: {
       type: String,
-      default: "default_device"
+      default: DEVICE_ID
     },
 
     calibration_mode: {
@@ -69,7 +70,7 @@ const Calibration =
 // ===============================
 router.get("/calibration", async (req, res) => {
   try {
-    const deviceId = req.query.device_id || "default_device";
+    const deviceId = resolveDeviceId(req.query.device_id);
 
     let doc = await Calibration.findOne({ device_id: deviceId }).lean();
 
@@ -97,7 +98,7 @@ router.get("/calibration", async (req, res) => {
   } catch (error) {
     console.error("GET /calibration error:", error);
 
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       message: "取得校正資料失敗",
       error: error.message
@@ -114,7 +115,7 @@ router.post("/calibration", async (req, res) => {
     console.log("POST /calibration received:", req.body);
 
     const {
-      device_id = "default_device",
+      device_id: requestedDeviceId,
       calibration_mode,
       calibration_mode1,
       ph4_raw,
@@ -122,6 +123,7 @@ router.post("/calibration", async (req, res) => {
       do_0_raw,
       do_100_raw
     } = req.body;
+    const device_id = resolveDeviceId(requestedDeviceId);
 
     const updateData = {
       updated_at: new Date()
@@ -214,7 +216,7 @@ router.post("/calibration", async (req, res) => {
   } catch (error) {
     console.error("POST /calibration error:", error);
 
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       message: "更新校正資料失敗",
       error: error.message

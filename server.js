@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
+const { isValidApiKey, verifyApiKey } = require("./utils/apiAuth");
 
 const {
   addClient,
@@ -10,16 +11,6 @@ const {
 } = require("./utils/wsHub");
 
 const app = express();
-
-function verifyApiKey(req, res, next) {
-  const clientKey = req.headers["x-api-key"];
-
-  if (!clientKey || clientKey !== process.env.API_KEY) {
-    return res.status(403).json({ error: "Unauthorized" });
-  }
-
-  next();
-}
 
 require("./db");
 
@@ -29,21 +20,15 @@ app.get("/health", (req, res) => {
 });
 
 app.use(express.json());
+// Every /api route is authenticated. The ESP32 already sends x-api-key for
+// ingest; Android supplies it from an injected build secret.
+app.use("/api", verifyApiKey);
 app.use("/api/fcm-token", require("./routes/fcmToken"));
-
 app.use("/api", require("./routes/calibrationapi"));
 app.use("/api", require("./routes/query"));
-
-app.use("/api/sensor", verifyApiKey);
 app.use("/api", require("./routes/ingest"));
-
-app.use("/api/settings", verifyApiKey);
 app.use("/api", require("./routes/settings"));
-
 app.use("/api", require("./routes/notificationSettings"));
-
-// 如果你之後要鎖 control，再打開這行
-// app.use("/api/control", verifyApiKey);
 app.use("/api", require("./routes/control"));
 app.use("/api", require("./routes/alarms"));
 
@@ -61,6 +46,11 @@ const wss = new WebSocket.Server({
 });
 
 wss.on("connection", (ws, req) => {
+  if (!isValidApiKey(req.headers["x-api-key"])) {
+    ws.close(1008, "Unauthorized");
+    return;
+  }
+
   const url = new URL(req.url, `http://${req.headers.host}`);
   const role = url.searchParams.get("role") || "esp32";
 

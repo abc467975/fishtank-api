@@ -5,7 +5,7 @@
    MongoDB 尚未建立 Settings 時，仍可正常判斷
    ===================================================== */
 
-const DEFAULT_DEVICE_ID = "fish_Tank_001";
+const { DEVICE_ID: DEFAULT_DEVICE_ID } = require("./deviceConfig");
 
 const DEFAULT_LIMITS = {
   temperature_min: 24.0,

@@ -1,0 +1,4 @@
+.env export-ignore
+.env.* export-ignore
+config/*.json export-ignore
+node_modules export-ignore

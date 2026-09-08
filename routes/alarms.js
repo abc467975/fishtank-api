@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const Alarm = require("../models/Alarm");
+const AlarmEvent = require("../models/AlarmEvent");
 
 const {
   broadcastAlarm
@@ -61,11 +62,13 @@ router.get("/alarms", async (req, res) => {
  */
 router.get("/alarms/active", async (req, res) => {
   try {
-    const alarms = await Alarm.find({
+    const filter = {
       status: {
         $in: ["active", "acknowledged"]
       }
-    })
+    };
+    if (req.query.device_id) filter.device_id = req.query.device_id;
+    const alarms = await Alarm.find(filter)
       .sort({ last_detected_at: -1 })
       .lean();
 
@@ -81,6 +84,24 @@ router.get("/alarms/active", async (req, res) => {
       success: false,
       message: "讀取目前警報失敗"
     });
+  }
+});
+
+// Immutable event history for the App. /alarms remains current-state compatible.
+router.get("/alarm-events", async (req, res) => {
+  try {
+    const rawLimit = Number(req.query.limit || 100);
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 500) : 100;
+    const filter = req.query.device_id ? { device_id: req.query.device_id } : {};
+    const events = await AlarmEvent.find(filter).sort({ event_at: -1 }).limit(limit).lean();
+    return res.json({
+      success: true,
+      count: events.length,
+      data: events.map((event) => ({ ...event.payload, event_type: event.event_type, event_at: event.event_at }))
+    });
+  } catch (error) {
+    console.error("GET /alarm-events error:", error);
+    return res.status(500).json({ success: false, message: "讀取警報事件失敗" });
   }
 });
 
@@ -112,6 +133,14 @@ router.patch("/alarms/:id/acknowledge", async (req, res) => {
     alarm.acknowledged_at = new Date();
 
     await alarm.save();
+
+    await AlarmEvent.create({
+      alarm_id: alarm._id,
+      device_id: alarm.device_id,
+      event_type: "acknowledged",
+      event_at: alarm.acknowledged_at,
+      payload: alarm.toObject()
+    });
 
 /*
   通知其他 App 畫面：

@@ -7,7 +7,7 @@ const {
   sendAlarmPushToDevice
 } = require("./fcmService");
 
-const DEFAULT_DEVICE_ID = "fish_Tank_001";
+const { DEVICE_ID: DEFAULT_DEVICE_ID } = require("./deviceConfig");
 
 /**
  * 用記憶體記錄每一種警報的狀態。

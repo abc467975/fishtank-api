@@ -1,3 +1,12 @@
 node_modules
 .env
+.env.*
+!.env.example
+config/*.json
+*.pem
+*.key
+*.p12
+*.jks
+node_modules
+.env
 config/fishtank-95285-firebase-adminsdk-fbsvc-445b1f762b.json
