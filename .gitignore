@@ -9,4 +9,3 @@ config/*.json
 *.jks
 node_modules
 .env
-config/fishtank-95285-firebase-adminsdk-fbsvc-445b1f762b.json
