@@ -79,26 +79,100 @@ delete gradingForStorage.notification_states;
     // 插入 SensorData
     // ----------------------------
     const safeData = {
-      ...baseData,
+  ...baseData,
 
-      T1: safeNumber(baseData.T1),
-      T2: safeNumber(baseData.T2),
-      T3: safeNumber(baseData.T3),
-      T4: safeNumber(baseData.T4),
-      TempAvg: safeNumber(baseData.TempAvg),
+  // =========================
+  // 溫度
+  // =========================
+  T1: safeNumber(baseData.T1),
+  T2: safeNumber(baseData.T2),
+  T3: safeNumber(baseData.T3),
+  T4: safeNumber(baseData.T4),
 
-      WL1: safeNumber(baseData.WL1),
-      WL2: safeNumber(baseData.WL2),
-      WL3: safeNumber(baseData.WL3),
+  TempAvg: safeNumber(
+    baseData.TempAvg
+  ),
 
-      pH: safeNumber(baseData.pH),
-      pH_value: safeNumber(baseData.pH_value),
 
-      DO: safeNumber(baseData.DO),
-      DO_value: safeNumber(baseData.DO_value),
+  // =========================
+  // 水位
+  // =========================
+  WL1: safeNumber(baseData.WL1),
+  WL2: safeNumber(baseData.WL2),
+  WL3: safeNumber(baseData.WL3),
 
-      Turb: safeNumber(baseData.Turb)
-    };
+
+  // =========================
+  // pH
+  // =========================
+  pH: safeNumber(baseData.pH),
+
+  pH_value: safeNumber(
+    baseData.pH_value
+  ),
+
+
+  // =========================
+  // RS485 DO
+  // =========================
+
+  // 現在 DO 與 DO_value 都是 mg/L
+  DO: safeNumber(
+    baseData.DO
+  ),
+
+  DO_value: safeNumber(
+    baseData.DO_value
+  ),
+
+  // 飽和度，例如 98.3
+  DO_saturation: safeNumber(
+    baseData.DO_saturation
+  ),
+
+  // LDO 感測器內建溫度
+  DO_sensor_temp: safeNumber(
+    baseData.DO_sensor_temp
+  ),
+
+  // 1 = 在線
+  // 0 = 失聯
+  DO_online: safeNumber(
+    baseData.DO_online
+  ),
+
+
+  // =========================
+  // 濁度
+  // =========================
+  Turb: safeNumber(
+    baseData.Turb
+  ),
+
+
+  // =========================
+  // Arduino 系統狀態
+  // =========================
+  tankHeaterOn: safeNumber(
+    baseData.tankHeaterOn
+  ),
+
+  bucketHeaterOn: safeNumber(
+    baseData.bucketHeaterOn
+  ),
+
+  waterChangeState: safeNumber(
+    baseData.waterChangeState
+  ),
+
+  manualMode: safeNumber(
+    baseData.manualMode
+  ),
+
+  manualTimeoutLatched: safeNumber(
+    baseData.manualTimeoutLatched
+  )
+};
 
     const data = {
   ...safeData,
