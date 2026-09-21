@@ -39,19 +39,101 @@ const SensorDataSchema =
 
       // =====================================================
       // 溫度感測器
+      //
+      // DS18B20 讀取失敗時：
+      // Arduino 會上傳 null
+      //
+      // T1 ~ T3 = 魚缸
+      // T4      = 新水桶
       // =====================================================
 
-      T1: Number,
+      T1: {
+        type: Number,
+        default: null
+      },
 
-      T2: Number,
+      T2: {
+        type: Number,
+        default: null
+      },
 
-      T3: Number,
+      T3: {
+        type: Number,
+        default: null
+      },
 
-      T4: Number,
+      T4: {
+        type: Number,
+        default: null
+      },
 
 
-      // Arduino 已算好的平均溫度
-      TempAvg: Number,
+      // Arduino 已算好的魚缸平均溫度
+      //
+      // T1~T3 至少一顆有效：
+      // 會計算有效感測器平均
+      //
+      // T1~T3 全部失敗：
+      // TempAvg = null
+      TempAvg: {
+        type: Number,
+        default: null
+      },
+
+
+      // =====================================================
+      // 溫度感測器狀態
+      // =====================================================
+
+      /*
+         T1 ~ T3 有效顆數
+
+         3 = 三顆正常
+         1~2 = 部分異常
+         0 = 全部失聯
+      */
+      tank_temperature_valid_count: {
+        type: Number,
+        default: 0
+      },
+
+
+      /*
+         魚缸溫度感測器狀態
+
+         normal
+         partial_error
+         sensor_error
+         unknown
+      */
+      tank_temperature_status: {
+        type: String,
+        enum: [
+          "normal",
+          "partial_error",
+          "sensor_error",
+          "unknown"
+        ],
+        default: "unknown"
+      },
+
+
+      /*
+         新水桶 T4 狀態
+
+         normal
+         sensor_error
+         unknown
+      */
+      bucket_temperature_status: {
+        type: String,
+        enum: [
+          "normal",
+          "sensor_error",
+          "unknown"
+        ],
+        default: "unknown"
+      },
 
 
       // =====================================================
@@ -74,7 +156,10 @@ const SensorDataSchema =
 
 
       // Arduino 換算完成的 pH
-      pH_value: Number,
+      pH_value: {
+        type: Number,
+        default: null
+      },
 
 
       // =====================================================
@@ -92,7 +177,10 @@ const SensorDataSchema =
          例如：
          DO = 7.82
       */
-      DO: Number,
+      DO: {
+        type: Number,
+        default: null
+      },
 
 
       /*
@@ -101,8 +189,14 @@ const SensorDataSchema =
 
          例如：
          7.82
+
+         尚未成功讀取時：
+         null
       */
-      DO_value: Number,
+      DO_value: {
+        type: Number,
+        default: null
+      },
 
 
       /*
@@ -111,8 +205,14 @@ const SensorDataSchema =
 
          例如：
          98.3 = 98.3 %
+
+         尚未成功讀取時：
+         null
       */
-      DO_saturation: Number,
+      DO_saturation: {
+        type: Number,
+        default: null
+      },
 
 
       /*
@@ -120,8 +220,14 @@ const SensorDataSchema =
 
          例如：
          26.90 °C
+
+         尚未成功讀取時：
+         null
       */
-      DO_sensor_temp: Number,
+      DO_sensor_temp: {
+        type: Number,
+        default: null
+      },
 
 
       /*
@@ -148,15 +254,49 @@ const SensorDataSchema =
       // 實際輸出 / 系統狀態
       // =====================================================
 
-      tankHeaterOn: Number,
+      /*
+         0 = 魚缸加熱器 OFF
+         1 = 魚缸加熱器 ON
+      */
+      tankHeaterOn: {
+        type: Number,
+        default: 0
+      },
 
-      bucketHeaterOn: Number,
 
-      waterChangeState: Number,
+      /*
+         0 = 新水桶加熱器 OFF
+         1 = 新水桶加熱器 ON
+      */
+      bucketHeaterOn: {
+        type: Number,
+        default: 0
+      },
 
-      manualMode: Number,
 
-      manualTimeoutLatched: Number,
+      /*
+         0 = WC_IDLE
+         1 = WC_DRAIN_TO_LOW
+         2 = WC_REFILL_TO_HIGH
+
+         1 / 2 時 Arduino 會強制鎖住兩支加熱棒
+      */
+      waterChangeState: {
+        type: Number,
+        default: 0
+      },
+
+
+      manualMode: {
+        type: Number,
+        default: 0
+      },
+
+
+      manualTimeoutLatched: {
+        type: Number,
+        default: 0
+      },
 
 
       // =====================================================
